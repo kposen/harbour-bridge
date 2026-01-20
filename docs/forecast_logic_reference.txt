@@ -1,0 +1,2838 @@
+[Sheet] Income statement
+B1: =='Start Here'!$H$5
+B2 (B2): =_xlfn.TEXTAFTER(CELL("filename"), "]")
+A6: ==_xlfn.XLOOKUP($B6,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C6 (C6:V6): =GET_FINANCIALS_LINE_ITEM(A6)
+W6: ==EOMONTH($V6,12)
+X6: ==EOMONTH($V6,12)
+Y6: ==EOMONTH($V6,12)
+Z6: ==EOMONTH($V6,12)
+AA6: ==EOMONTH($V6,12)
+AB6: ==EOMONTH($V6,12)
+A7: ==_xlfn.XLOOKUP($B7,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C7 (C7:V7): =GET_FINANCIALS_LINE_ITEM(A7)
+W7: ==V$7*(1+W$42)
+X7: ==W$7*(1+X$42)
+Y7: ==X$7*(1+Y$42)
+Z7: ==Y$7*(1+Z$42)
+AA7: ==Z$7*(1+AA$42)
+AB7: ==AA$7*(1+AB$42)
+C8: ==C9-C7
+D8: ==D9-D7
+E8: ==E9-E7
+F8: ==F9-F7
+G8: ==G9-G7
+H8: ==H9-H7
+I8: ==I9-I7
+J8: ==J9-J7
+K8: ==K9-K7
+L8: ==L9-L7
+M8: ==M9-M7
+N8: ==N9-N7
+O8: ==O9-O7
+P8: ==P9-P7
+Q8: ==Q9-Q7
+R8: ==R9-R7
+S8: ==S9-S7
+T8: ==T9-T7
+U8: ==U9-U7
+V8: ==V9-V7
+A9: ==_xlfn.XLOOKUP($B9,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C9 (C9:V9): =GET_FINANCIALS_LINE_ITEM(A9)
+A11: ==_xlfn.XLOOKUP($B11,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C11 (C11:V11): =-GET_FINANCIALS_LINE_ITEM(A11)
+C12: ==-C$74-C$11
+D12: ==-D$74-D$11
+E12: ==-E$74-E$11
+F12: ==-F$74-F$11
+G12: ==-G$74-G$11
+H12: ==-H$74-H$11
+I12: ==-I$74-I$11
+J12: ==-J$74-J$11
+K12: ==-K$74-K$11
+L12: ==-L$74-L$11
+M12: ==-M$74-M$11
+N12: ==-N$74-N$11
+O12: ==-O$74-O$11
+P12: ==-P$74-P$11
+Q12: ==-Q$74-Q$11
+R12: ==-R$74-R$11
+S12: ==-S$74-S$11
+T12: ==-T$74-T$11
+U12: ==-U$74-U$11
+V12: ==-V$74-V$11
+W13: ==-'Cash flow statement'!W$14
+X13: ==-'Cash flow statement'!X$14
+Y13: ==-'Cash flow statement'!Y$14
+Z13: ==-'Cash flow statement'!Z$14
+AA13: ==-'Cash flow statement'!AA$14
+AB13: ==-'Cash flow statement'!AB$14
+C14: ==C$15-C$9-SUM(C$11:C$12)
+D14: ==D$15-D$9-SUM(D$11:D$12)
+E14: ==E$15-E$9-SUM(E$11:E$12)
+F14: ==F$15-F$9-SUM(F$11:F$12)
+G14: ==G$15-G$9-SUM(G$11:G$12)
+H14: ==H$15-H$9-SUM(H$11:H$12)
+I14: ==I$15-I$9-SUM(I$11:I$12)
+J14: ==J$15-J$9-SUM(J$11:J$12)
+K14: ==K$15-K$9-SUM(K$11:K$12)
+L14: ==L$15-L$9-SUM(L$11:L$12)
+M14: ==M$15-M$9-SUM(M$11:M$12)
+N14: ==N$15-N$9-SUM(N$11:N$12)
+O14: ==O$15-O$9-SUM(O$11:O$12)
+P14: ==P$15-P$9-SUM(P$11:P$12)
+Q14: ==Q$15-Q$9-SUM(Q$11:Q$12)
+R14: ==R$15-R$9-SUM(R$11:R$12)
+S14: ==S$15-S$9-SUM(S$11:S$12)
+T14: ==T$15-T$9-SUM(T$11:T$12)
+U14: ==U$15-U$9-SUM(U$11:U$12)
+V14: ==V$15-V$9-SUM(V$11:V$12)
+W14: ==W$15-(W$7+W$13)
+X14: ==X$15-(X$7+X$13)
+Y14: ==Y$15-(Y$7+Y$13)
+Z14: ==Z$15-(Z$7+Z$13)
+AA14: ==AA$15-(AA$7+AA$13)
+AB14: ==AB$15-(AB$7+AB$13)
+A15: ==_xlfn.XLOOKUP($B15,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C15 (C15:V15): =GET_FINANCIALS_LINE_ITEM(A15)
+W15: ==W$7*W$46
+X15: ==X$7*X$46
+Y15: ==Y$7*Y$46
+Z15: ==Z$7*Z$46
+AA15: ==AA$7*AA$46
+AB15: ==AB$7*AB$46
+A17: ==_xlfn.XLOOKUP($B17,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C17 (C17:V17): =GET_FINANCIALS_LINE_ITEM(A17)
+W17: ==W$66*W$76
+X17: ==X$66*X$76
+Y17: ==Y$66*Y$76
+Z17: ==Z$66*Z$76
+AA17: ==AA$66*AA$76
+AB17: ==AB$66*AB$76
+A18: ==_xlfn.XLOOKUP($B18,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C18 (C18:V18): =-GET_FINANCIALS_LINE_ITEM(A18)
+W18: ==-W$70*W$77
+X18: ==-X$70*X$77
+Y18: ==-Y$70*Y$77
+Z18: ==-Z$70*Z$77
+AA18: ==-AA$70*AA$77
+AB18: ==-AB$70*AB$77
+C19: ==C20-C15-C17-C18
+D19: ==D20-D15-D17-D18
+E19: ==E20-E15-E17-E18
+F19: ==F20-F15-F17-F18
+G19: ==G20-G15-G17-G18
+H19: ==H20-H15-H17-H18
+I19: ==I20-I15-I17-I18
+J19: ==J20-J15-J17-J18
+K19: ==K20-K15-K17-K18
+L19: ==L20-L15-L17-L18
+M19: ==M20-M15-M17-M18
+N19: ==N20-N15-N17-N18
+O19: ==O20-O15-O17-O18
+P19: ==P20-P15-P17-P18
+Q19: ==Q20-Q15-Q17-Q18
+R19: ==R20-R15-R17-R18
+S19: ==S20-S15-S17-S18
+T19: ==T20-T15-T17-T18
+U19: ==U20-U15-U17-U18
+V19: ==V20-V15-V17-V18
+A20: ==_xlfn.XLOOKUP($B20,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C20 (C20:V20): =GET_FINANCIALS_LINE_ITEM(A20)
+W20: ==SUM(W$15,W$17:W$19)
+X20: ==SUM(X$15,X$17:X$19)
+Y20: ==SUM(Y$15,Y$17:Y$19)
+Z20: ==SUM(Z$15,Z$17:Z$19)
+AA20: ==SUM(AA$15,AA$17:AA$19)
+AB20: ==SUM(AB$15,AB$17:AB$19)
+A22: ==_xlfn.XLOOKUP($B22,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C22 (C22:V22): =-GET_FINANCIALS_LINE_ITEM(A22)
+W22: ==-W$20*W$50
+X22: ==-X$20*X$50
+Y22: ==-Y$20*Y$50
+Z22: ==-Z$20*Z$50
+AA22: ==-AA$20*AA$50
+AB22: ==-AB$20*AB$50
+A23: ==_xlfn.XLOOKUP($B23,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C23 (C23:V23): =GET_FINANCIALS_LINE_ITEM(A23)
+W23: ==V23
+X23: ==W23
+Y23: ==X23
+Z23: ==Y23
+AA23: ==Z23
+AB23: ==AA23
+C24: ==C23+C20+C22
+D24: ==D23+D20+D22
+E24: ==E23+E20+E22
+F24: ==F23+F20+F22
+G24: ==G23+G20+G22
+H24: ==H23+H20+H22
+I24: ==I23+I20+I22
+J24: ==J23+J20+J22
+K24: ==K23+K20+K22
+L24: ==L23+L20+L22
+M24: ==M23+M20+M22
+N24: ==N23+N20+N22
+O24: ==O23+O20+O22
+P24: ==P23+P20+P22
+Q24: ==Q23+Q20+Q22
+R24: ==R23+R20+R22
+S24: ==S23+S20+S22
+T24: ==T23+T20+T22
+U24: ==U23+U20+U22
+V24: ==V23+V20+V22
+W24: ==SUM(W$20,W$22:W$23)
+X24: ==SUM(X$20,X$22:X$23)
+Y24: ==SUM(Y$20,Y$22:Y$23)
+Z24: ==SUM(Z$20,Z$22:Z$23)
+AA24: ==SUM(AA$20,AA$22:AA$23)
+AB24: ==SUM(AB$20,AB$22:AB$23)
+A26: ==_xlfn.XLOOKUP($B26,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C26 (C26:V26): =-GET_FINANCIALS_LINE_ITEM(A26)
+W26: ==-W$24*W$54
+X26: ==-X$24*X$54
+Y26: ==-Y$24*Y$54
+Z26: ==-Z$24*Z$54
+AA26: ==-AA$24*AA$54
+AB26: ==-AB$24*AB$54
+A27: ==_xlfn.XLOOKUP($B27,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C27 (C27:V27): =-GET_FINANCIALS_LINE_ITEM(A27)
+W27: ==V$27
+X27: ==W$27
+Y27: ==X$27
+Z27: ==Y$27
+AA27: ==Z$27
+AB27: ==AA$27
+C28: ==C$24+C$26+C$27
+D28: ==D$24+D$26+D$27
+E28: ==E$24+E$26+E$27
+F28: ==F$24+F$26+F$27
+G28: ==G$24+G$26+G$27
+H28: ==H$24+H$26+H$27
+I28: ==I$24+I$26+I$27
+J28: ==J$24+J$26+J$27
+K28: ==K$24+K$26+K$27
+L28: ==L$24+L$26+L$27
+M28: ==M$24+M$26+M$27
+N28: ==N$24+N$26+N$27
+O28: ==O$24+O$26+O$27
+P28: ==P$24+P$26+P$27
+Q28: ==Q$24+Q$26+Q$27
+R28: ==R$24+R$26+R$27
+S28: ==S$24+S$26+S$27
+T28: ==T$24+T$26+T$27
+U28: ==U$24+U$26+U$27
+V28: ==V$24+V$26+V$27
+W28: ==SUM(W$24,W$26:W$27)
+X28: ==SUM(X$24,X$26:X$27)
+Y28: ==SUM(Y$24,Y$26:Y$27)
+Z28: ==SUM(Z$24,Z$26:Z$27)
+AA28: ==SUM(AA$24,AA$26:AA$27)
+AB28: ==SUM(AB$24,AB$26:AB$27)
+A32: ==_xlfn.XLOOKUP($B32,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C32 (C32:V32): =-GET_FINANCIALS_LINE_ITEM(A32)
+W32: ==-'Cash flow statement'!W$55*W$58
+X32: ==-'Cash flow statement'!X$55*X$58
+Y32: ==-'Cash flow statement'!Y$55*Y$58
+Z32: ==-'Cash flow statement'!Z$55*Z$58
+AA32: ==-'Cash flow statement'!AA$55*AA$58
+AB32: ==-'Cash flow statement'!AB$55*AB$58
+C33: ==C28+C32
+D33: ==D28+D32
+E33: ==E28+E32
+F33: ==F28+F32
+G33: ==G28+G32
+H33: ==H28+H32
+I33: ==I28+I32
+J33: ==J28+J32
+K33: ==K28+K32
+L33: ==L28+L32
+M33: ==M28+M32
+N33: ==N28+N32
+O33: ==O28+O32
+P33: ==P28+P32
+Q33: ==Q28+Q32
+R33: ==R28+R32
+S33: ==S28+S32
+T33: ==T28+T32
+U33: ==U28+U32
+V33: ==V28+V32
+W33: ==W$28+W$32
+X33: ==X$28+X$32
+Y33: ==Y$28+Y$32
+Z33: ==Z$28+Z$32
+AA33: ==AA$28+AA$32
+AB33: ==AB$28+AB$32
+A35: ==_xlfn.XLOOKUP($B35,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C35 (C35:V35): =GET_FINANCIALS_LINE_ITEM(A35)
+W35: ==V$35*(1+W$62)
+X35: ==W$35*(1+X$62)
+Y35: ==X$35*(1+Y$62)
+Z35: ==Y$35*(1+Z$62)
+AA35: ==Z$35*(1+AA$62)
+AB35: ==AA$35*(1+AB$62)
+D36: ==AVERAGE(C$35:D$35)
+E36: ==AVERAGE(D$35:E$35)
+F36: ==AVERAGE(E$35:F$35)
+G36: ==AVERAGE(F$35:G$35)
+H36: ==AVERAGE(G$35:H$35)
+I36: ==AVERAGE(H$35:I$35)
+J36: ==AVERAGE(I$35:J$35)
+K36: ==AVERAGE(J$35:K$35)
+L36: ==AVERAGE(K$35:L$35)
+M36: ==AVERAGE(L$35:M$35)
+N36: ==AVERAGE(M$35:N$35)
+O36: ==AVERAGE(N$35:O$35)
+P36: ==AVERAGE(O$35:P$35)
+Q36: ==AVERAGE(P$35:Q$35)
+R36: ==AVERAGE(Q$35:R$35)
+S36: ==AVERAGE(R$35:S$35)
+T36: ==AVERAGE(S$35:T$35)
+U36: ==AVERAGE(T$35:U$35)
+V36: ==AVERAGE(U$35:V$35)
+W36: ==AVERAGE(V$35:W$35)
+X36: ==AVERAGE(W$35:X$35)
+Y36: ==AVERAGE(X$35:Y$35)
+Z36: ==AVERAGE(Y$35:Z$35)
+AA36: ==AVERAGE(Z$35:AA$35)
+AB36: ==AVERAGE(AA$35:AB$35)
+W40: =='Forecast mechanics'!W$108
+X40: =='Forecast mechanics'!X$108
+Y40: =='Forecast mechanics'!Y$108
+Z40: =='Forecast mechanics'!Z$108
+AA40: =='Forecast mechanics'!AA$108
+AB40: =='Forecast mechanics'!AB$108
+D42: ==D$7/C$7-1
+E42: ==E$7/D$7-1
+F42: ==F$7/E$7-1
+G42: ==G$7/F$7-1
+H42: ==H$7/G$7-1
+I42: ==I$7/H$7-1
+J42: ==J$7/I$7-1
+K42: ==K$7/J$7-1
+L42: ==L$7/K$7-1
+M42: ==M$7/L$7-1
+N42: ==N$7/M$7-1
+O42: ==O$7/N$7-1
+P42: ==P$7/O$7-1
+Q42: ==Q$7/P$7-1
+R42: ==R$7/Q$7-1
+S42: ==S$7/R$7-1
+T42: ==T$7/S$7-1
+U42: ==U$7/T$7-1
+V42: ==V$7/U$7-1
+W42 (W42): =_xlfn.SWITCH(W41,,W40,W41)
+X42 (X42): =_xlfn.SWITCH(X41,,X40,X41)
+Y42 (Y42): =_xlfn.SWITCH(Y41,,Y40,Y41)
+Z42 (Z42): =_xlfn.SWITCH(Z41,,Z40,Z41)
+AA42 (AA42): =_xlfn.SWITCH(AA41,,AA40,AA41)
+AB42 (AB42): =_xlfn.SWITCH(AB41,,AB40,AB41)
+W44: =='Forecast mechanics'!W$166
+X44: =='Forecast mechanics'!X$166
+Y44: =='Forecast mechanics'!Y$166
+Z44: =='Forecast mechanics'!Z$166
+AA44: =='Forecast mechanics'!AA$166
+AB44: =='Forecast mechanics'!AB$166
+C46: ==C$15/C$7
+D46: ==D$15/D$7
+E46: ==E$15/E$7
+F46: ==F$15/F$7
+G46: ==G$15/G$7
+H46: ==H$15/H$7
+I46: ==I$15/I$7
+J46: ==J$15/J$7
+K46: ==K$15/K$7
+L46: ==L$15/L$7
+M46: ==M$15/M$7
+N46: ==N$15/N$7
+O46: ==O$15/O$7
+P46: ==P$15/P$7
+Q46: ==Q$15/Q$7
+R46: ==R$15/R$7
+S46: ==S$15/S$7
+T46: ==T$15/T$7
+U46: ==U$15/U$7
+V46: ==V$15/V$7
+W46 (W46): =_xlfn.SWITCH(W45,,W44,W45)
+X46 (X46): =_xlfn.SWITCH(X45,,X44,X45)
+Y46 (Y46): =_xlfn.SWITCH(Y45,,Y44,Y45)
+Z46 (Z46): =_xlfn.SWITCH(Z45,,Z44,Z45)
+AA46 (AA46): =_xlfn.SWITCH(AA45,,AA44,AA45)
+AB46 (AB46): =_xlfn.SWITCH(AB45,,AB44,AB45)
+W48 (W48): =CLIP($V$50,min_tax,max_tax)
+X48: ==W50
+Y48: ==X50
+Z48: ==Y50
+AA48: ==Z50
+AB48: ==AA50
+C50: ==-C$22/C$20
+D50: ==-D$22/D$20
+E50: ==-E$22/E$20
+F50: ==-F$22/F$20
+G50: ==-G$22/G$20
+H50: ==-H$22/H$20
+I50: ==-I$22/I$20
+J50: ==-J$22/J$20
+K50: ==-K$22/K$20
+L50: ==-L$22/L$20
+M50: ==-M$22/M$20
+N50: ==-N$22/N$20
+O50: ==-O$22/O$20
+P50: ==-P$22/P$20
+Q50: ==-Q$22/Q$20
+R50: ==-R$22/R$20
+S50: ==-S$22/S$20
+T50: ==-T$22/T$20
+U50: ==-U$22/U$20
+V50: ==-V$22/V$20
+W50 (W50): =_xlfn.SWITCH(W49,,W48,W49)
+X50 (X50): =_xlfn.SWITCH(X49,,X48,X49)
+Y50 (Y50): =_xlfn.SWITCH(Y49,,Y48,Y49)
+Z50 (Z50): =_xlfn.SWITCH(Z49,,Z48,Z49)
+AA50 (AA50): =_xlfn.SWITCH(AA49,,AA48,AA49)
+AB50 (AB50): =_xlfn.SWITCH(AB49,,AB48,AB49)
+W52: ==_xlfn.AGGREGATE(1,2,$R54:$V54)
+X52: ==W54
+Y52: ==X54
+Z52: ==Y54
+AA52: ==Z54
+AB52: ==AA54
+C54: ==-C$26/C$24
+D54: ==-D$26/D$24
+E54: ==-E$26/E$24
+F54: ==-F$26/F$24
+G54: ==-G$26/G$24
+H54: ==-H$26/H$24
+I54: ==-I$26/I$24
+J54: ==-J$26/J$24
+K54: ==-K$26/K$24
+L54: ==-L$26/L$24
+M54: ==-M$26/M$24
+N54: ==-N$26/N$24
+O54: ==-O$26/O$24
+P54: ==-P$26/P$24
+Q54: ==-Q$26/Q$24
+R54: ==-R$26/R$24
+S54: ==-S$26/S$24
+T54: ==-T$26/T$24
+U54: ==-U$26/U$24
+V54: ==-V$26/V$24
+W54 (W54): =_xlfn.SWITCH(W53,,W52,W53)
+X54 (X54): =_xlfn.SWITCH(X53,,X52,X53)
+Y54 (Y54): =_xlfn.SWITCH(Y53,,Y52,Y53)
+Z54 (Z54): =_xlfn.SWITCH(Z53,,Z52,Z53)
+AA54 (AA54): =_xlfn.SWITCH(AA53,,AA52,AA53)
+AB54 (AB54): =_xlfn.SWITCH(AB53,,AB52,AB53)
+W56 (W56): =CLIP(-_xlfn.AGGREGATE(9,2,$R32:$V32)/_xlfn.AGGREGATE(9,2,$R28:$V28), min_payout, max_payout)
+X56: ==W58
+Y56: ==X58
+Z56: ==Y58
+AA56: ==Z58
+AB56: ==AA58
+C58: ==C$87/C$86
+D58: ==D$87/D$86
+E58: ==E$87/E$86
+F58: ==F$87/F$86
+G58: ==G$87/G$86
+H58: ==H$87/H$86
+I58: ==I$87/I$86
+J58: ==J$87/J$86
+K58: ==K$87/K$86
+L58: ==L$87/L$86
+M58: ==M$87/M$86
+N58: ==N$87/N$86
+O58: ==O$87/O$86
+P58: ==P$87/P$86
+Q58: ==Q$87/Q$86
+R58: ==R$87/R$86
+S58: ==S$87/S$86
+T58: ==T$87/T$86
+U58: ==U$87/U$86
+V58: ==V$87/V$86
+W58 (W58): =_xlfn.SWITCH(W57,,W56,W57)
+X58 (X58): =_xlfn.SWITCH(X57,,X56,X57)
+Y58 (Y58): =_xlfn.SWITCH(Y57,,Y56,Y57)
+Z58 (Z58): =_xlfn.SWITCH(Z57,,Z56,Z57)
+AA58 (AA58): =_xlfn.SWITCH(AA57,,AA56,AA57)
+AB58 (AB58): =_xlfn.SWITCH(AB57,,AB56,AB57)
+X60: ==W62
+Y60: ==X62
+Z60: ==Y62
+AA60: ==Z62
+AB60: ==AA62
+D62: ==D$35/C$35-1
+E62: ==E$35/D$35-1
+F62: ==F$35/E$35-1
+G62: ==G$35/F$35-1
+H62: ==H$35/G$35-1
+I62: ==I$35/H$35-1
+J62: ==J$35/I$35-1
+K62: ==K$35/J$35-1
+L62: ==L$35/K$35-1
+M62: ==M$35/L$35-1
+N62: ==N$35/M$35-1
+O62: ==O$35/N$35-1
+P62: ==P$35/O$35-1
+Q62: ==Q$35/P$35-1
+R62: ==R$35/Q$35-1
+S62: ==S$35/R$35-1
+T62: ==T$35/S$35-1
+U62: ==U$35/T$35-1
+V62: ==V$35/U$35-1
+W62 (W62): =_xlfn.SWITCH(W61,,W60,W61)
+X62 (X62): =_xlfn.SWITCH(X61,,X60,X61)
+Y62 (Y62): =_xlfn.SWITCH(Y61,,Y60,Y61)
+Z62 (Z62): =_xlfn.SWITCH(Z61,,Z60,Z61)
+AA62 (AA62): =_xlfn.SWITCH(AA61,,AA60,AA61)
+AB62 (AB62): =_xlfn.SWITCH(AB61,,AB60,AB61)
+W64: ==V66
+X64: ==W66
+Y64: ==X66
+Z64: ==Y66
+AA64: ==Z66
+AB64: ==AA66
+D66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!C$11:D$11), IF(_xlpm.avg_debt=0,,D$17/_xlpm.avg_debt))
+E66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!D$11:E$11), IF(_xlpm.avg_debt=0,,E$17/_xlpm.avg_debt))
+F66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!E$11:F$11), IF(_xlpm.avg_debt=0,,F$17/_xlpm.avg_debt))
+G66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!F$11:G$11), IF(_xlpm.avg_debt=0,,G$17/_xlpm.avg_debt))
+H66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!G$11:H$11), IF(_xlpm.avg_debt=0,,H$17/_xlpm.avg_debt))
+I66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!H$11:I$11), IF(_xlpm.avg_debt=0,,I$17/_xlpm.avg_debt))
+J66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!I$11:J$11), IF(_xlpm.avg_debt=0,,J$17/_xlpm.avg_debt))
+K66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!J$11:K$11), IF(_xlpm.avg_debt=0,,K$17/_xlpm.avg_debt))
+L66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!K$11:L$11), IF(_xlpm.avg_debt=0,,L$17/_xlpm.avg_debt))
+M66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!L$11:M$11), IF(_xlpm.avg_debt=0,,M$17/_xlpm.avg_debt))
+N66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!M$11:N$11), IF(_xlpm.avg_debt=0,,N$17/_xlpm.avg_debt))
+O66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!N$11:O$11), IF(_xlpm.avg_debt=0,,O$17/_xlpm.avg_debt))
+P66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!O$11:P$11), IF(_xlpm.avg_debt=0,,P$17/_xlpm.avg_debt))
+Q66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!P$11:Q$11), IF(_xlpm.avg_debt=0,,Q$17/_xlpm.avg_debt))
+R66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!Q$11:R$11), IF(_xlpm.avg_debt=0,,R$17/_xlpm.avg_debt))
+S66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!R$11:S$11), IF(_xlpm.avg_debt=0,,S$17/_xlpm.avg_debt))
+T66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!S$11:T$11), IF(_xlpm.avg_debt=0,,T$17/_xlpm.avg_debt))
+U66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!T$11:U$11), IF(_xlpm.avg_debt=0,,U$17/_xlpm.avg_debt))
+V66: ==_xlfn.LET(_xlpm.avg_debt, AVERAGE('Balance sheet'!U$11:V$11), IF(_xlpm.avg_debt=0,,V$17/_xlpm.avg_debt))
+W66 (W66): =_xlfn.SWITCH(W65,,W64,W65)
+X66 (X66): =_xlfn.SWITCH(X65,,X64,X65)
+Y66 (Y66): =_xlfn.SWITCH(Y65,,Y64,Y65)
+Z66 (Z66): =_xlfn.SWITCH(Z65,,Z64,Z65)
+AA66 (AA66): =_xlfn.SWITCH(AA65,,AA64,AA65)
+AB66 (AB66): =_xlfn.SWITCH(AB65,,AB64,AB65)
+W68: ==W$64+rate_spread
+X68: ==X$64+rate_spread
+Y68: ==Y$64+rate_spread
+Z68: ==Z$64+rate_spread
+AA68: ==AA$64+rate_spread
+AB68: ==AB$64+rate_spread
+D70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!C$35:D$35,'Balance sheet'!C$41:D$41)/2, IF(_xlpm.avg_debt=0,,D$18/_xlpm.avg_debt))
+E70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!D$35:E$35,'Balance sheet'!D$41:E$41)/2, IF(_xlpm.avg_debt=0,,E$18/_xlpm.avg_debt))
+F70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!E$35:F$35,'Balance sheet'!E$41:F$41)/2, IF(_xlpm.avg_debt=0,,F$18/_xlpm.avg_debt))
+G70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!F$35:G$35,'Balance sheet'!F$41:G$41)/2, IF(_xlpm.avg_debt=0,,G$18/_xlpm.avg_debt))
+H70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!G$35:H$35,'Balance sheet'!G$41:H$41)/2, IF(_xlpm.avg_debt=0,,H$18/_xlpm.avg_debt))
+I70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!H$35:I$35,'Balance sheet'!H$41:I$41)/2, IF(_xlpm.avg_debt=0,,I$18/_xlpm.avg_debt))
+J70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!I$35:J$35,'Balance sheet'!I$41:J$41)/2, IF(_xlpm.avg_debt=0,,J$18/_xlpm.avg_debt))
+K70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!J$35:K$35,'Balance sheet'!J$41:K$41)/2, IF(_xlpm.avg_debt=0,,K$18/_xlpm.avg_debt))
+L70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!K$35:L$35,'Balance sheet'!K$41:L$41)/2, IF(_xlpm.avg_debt=0,,L$18/_xlpm.avg_debt))
+M70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!L$35:M$35,'Balance sheet'!L$41:M$41)/2, IF(_xlpm.avg_debt=0,,M$18/_xlpm.avg_debt))
+N70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!M$35:N$35,'Balance sheet'!M$41:N$41)/2, IF(_xlpm.avg_debt=0,,N$18/_xlpm.avg_debt))
+O70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!N$35:O$35,'Balance sheet'!N$41:O$41)/2, IF(_xlpm.avg_debt=0,,O$18/_xlpm.avg_debt))
+P70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!O$35:P$35,'Balance sheet'!O$41:P$41)/2, IF(_xlpm.avg_debt=0,,P$18/_xlpm.avg_debt))
+Q70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!P$35:Q$35,'Balance sheet'!P$41:Q$41)/2, IF(_xlpm.avg_debt=0,,Q$18/_xlpm.avg_debt))
+R70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!Q$35:R$35,'Balance sheet'!Q$41:R$41)/2, IF(_xlpm.avg_debt=0,,R$18/_xlpm.avg_debt))
+S70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!R$35:S$35,'Balance sheet'!R$41:S$41)/2, IF(_xlpm.avg_debt=0,,S$18/_xlpm.avg_debt))
+T70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!S$35:T$35,'Balance sheet'!S$41:T$41)/2, IF(_xlpm.avg_debt=0,,T$18/_xlpm.avg_debt))
+U70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!T$35:U$35,'Balance sheet'!T$41:U$41)/2, IF(_xlpm.avg_debt=0,,U$18/_xlpm.avg_debt))
+V70: ==-_xlfn.LET(_xlpm.avg_debt, SUM('Balance sheet'!U$35:V$35,'Balance sheet'!U$41:V$41)/2, IF(_xlpm.avg_debt=0,,V$18/_xlpm.avg_debt))
+W70 (W70): =_xlfn.SWITCH(W69,,W68,W69)
+X70 (X70): =_xlfn.SWITCH(X69,,X68,X69)
+Y70 (Y70): =_xlfn.SWITCH(Y69,,Y68,Y69)
+Z70 (Z70): =_xlfn.SWITCH(Z69,,Z68,Z69)
+AA70 (AA70): =_xlfn.SWITCH(AA69,,AA68,AA69)
+AB70 (AB70): =_xlfn.SWITCH(AB69,,AB68,AB69)
+A74: ==_xlfn.XLOOKUP($B74,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C74 (C74:V74): =GET_FINANCIALS_LINE_ITEM(A74)
+W74: ==-W$13
+X74: ==-X$13
+Y74: ==-Y$13
+Z74: ==-Z$13
+AA74: ==-AA$13
+AB74: ==-AB$13
+C75: ==C$15*(1-C$50)
+D75: ==D$15*(1-D$50)
+E75: ==E$15*(1-E$50)
+F75: ==F$15*(1-F$50)
+G75: ==G$15*(1-G$50)
+H75: ==H$15*(1-H$50)
+I75: ==I$15*(1-I$50)
+J75: ==J$15*(1-J$50)
+K75: ==K$15*(1-K$50)
+L75: ==L$15*(1-L$50)
+M75: ==M$15*(1-M$50)
+N75: ==N$15*(1-N$50)
+O75: ==O$15*(1-O$50)
+P75: ==P$15*(1-P$50)
+Q75: ==Q$15*(1-Q$50)
+R75: ==R$15*(1-R$50)
+S75: ==S$15*(1-S$50)
+T75: ==T$15*(1-T$50)
+U75: ==U$15*(1-U$50)
+V75: ==V$15*(1-V$50)
+W75: ==W$15*(1-W$50)
+X75: ==X$15*(1-X$50)
+Y75: ==Y$15*(1-Y$50)
+Z75: ==Z$15*(1-Z$50)
+AA75: ==AA$15*(1-AA$50)
+AB75: ==AB$15*(1-AB$50)
+W76: =='Balance sheet'!V$11+W$15*(1-W$50)*(1-W$54)*(1-W$58)/2
+X76: =='Balance sheet'!W$11+X$15*(1-X$50)*(1-X$54)*(1-X$58)/2
+Y76: =='Balance sheet'!X$11+Y$15*(1-Y$50)*(1-Y$54)*(1-Y$58)/2
+Z76: =='Balance sheet'!Y$11+Z$15*(1-Z$50)*(1-Z$54)*(1-Z$58)/2
+AA76: =='Balance sheet'!Z$11+AA$15*(1-AA$50)*(1-AA$54)*(1-AA$58)/2
+AB76: =='Balance sheet'!AA$11+AB$15*(1-AB$50)*(1-AB$54)*(1-AB$58)/2
+D77: =='Balance sheet'!C$35+'Balance sheet'!C$41
+E77: =='Balance sheet'!D$35+'Balance sheet'!D$41
+F77: =='Balance sheet'!E$35+'Balance sheet'!E$41
+G77: =='Balance sheet'!F$35+'Balance sheet'!F$41
+H77: =='Balance sheet'!G$35+'Balance sheet'!G$41
+I77: =='Balance sheet'!H$35+'Balance sheet'!H$41
+J77: =='Balance sheet'!I$35+'Balance sheet'!I$41
+K77: =='Balance sheet'!J$35+'Balance sheet'!J$41
+L77: =='Balance sheet'!K$35+'Balance sheet'!K$41
+M77: =='Balance sheet'!L$35+'Balance sheet'!L$41
+N77: =='Balance sheet'!M$35+'Balance sheet'!M$41
+O77: =='Balance sheet'!N$35+'Balance sheet'!N$41
+P77: =='Balance sheet'!O$35+'Balance sheet'!O$41
+Q77: =='Balance sheet'!P$35+'Balance sheet'!P$41
+R77: =='Balance sheet'!Q$35+'Balance sheet'!Q$41
+S77: =='Balance sheet'!R$35+'Balance sheet'!R$41
+T77: =='Balance sheet'!S$35+'Balance sheet'!S$41
+U77: =='Balance sheet'!T$35+'Balance sheet'!T$41
+V77: =='Balance sheet'!U$35+'Balance sheet'!U$41
+W77: =='Balance sheet'!V$35+'Balance sheet'!V$41
+X77: =='Balance sheet'!W$35+'Balance sheet'!W$41
+Y77: =='Balance sheet'!X$35+'Balance sheet'!X$41
+Z77: =='Balance sheet'!Y$35+'Balance sheet'!Y$41
+AA77: =='Balance sheet'!Z$35+'Balance sheet'!Z$41
+AB77: =='Balance sheet'!AA$35+'Balance sheet'!AA$41
+D82: ==D$7/D$36
+E82: ==E$7/E$36
+F82: ==F$7/F$36
+G82: ==G$7/G$36
+H82: ==H$7/H$36
+I82: ==I$7/I$36
+J82: ==J$7/J$36
+K82: ==K$7/K$36
+L82: ==L$7/L$36
+M82: ==M$7/M$36
+N82: ==N$7/N$36
+O82: ==O$7/O$36
+P82: ==P$7/P$36
+Q82: ==Q$7/Q$36
+R82: ==R$7/R$36
+S82: ==S$7/S$36
+T82: ==T$7/T$36
+U82: ==U$7/U$36
+V82: ==V$7/V$36
+W82: ==W$7/W$36
+X82: ==X$7/X$36
+Y82: ==Y$7/Y$36
+Z82: ==Z$7/Z$36
+AA82: ==AA$7/AA$36
+AB82: ==AB$7/AB$36
+A83: ==_xlfn.XLOOKUP($B83,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C83 (C83:V83): =GET_FINANCIALS_LINE_ITEM(A83)
+D84: ==D$28/D$36
+E84: ==E$28/E$36
+F84: ==F$28/F$36
+G84: ==G$28/G$36
+H84: ==H$28/H$36
+I84: ==I$28/I$36
+J84: ==J$28/J$36
+K84: ==K$28/K$36
+L84: ==L$28/L$36
+M84: ==M$28/M$36
+N84: ==N$28/N$36
+O84: ==O$28/O$36
+P84: ==P$28/P$36
+Q84: ==Q$28/Q$36
+R84: ==R$28/R$36
+S84: ==S$28/S$36
+T84: ==T$28/T$36
+U84: ==U$28/U$36
+V84: ==V$28/V$36
+W84: ==W$28/W$36
+X84: ==X$28/X$36
+Y84: ==Y$28/Y$36
+Z84: ==Z$28/Z$36
+AA84: ==AA$28/AA$36
+AB84: ==AB$28/AB$36
+D85: =='Cash flow statement'!D$55/'Income statement'!D$36
+E85: =='Cash flow statement'!E$55/'Income statement'!E$36
+F85: =='Cash flow statement'!F$55/'Income statement'!F$36
+G85: =='Cash flow statement'!G$55/'Income statement'!G$36
+H85: =='Cash flow statement'!H$55/'Income statement'!H$36
+I85: =='Cash flow statement'!I$55/'Income statement'!I$36
+J85: =='Cash flow statement'!J$55/'Income statement'!J$36
+K85: =='Cash flow statement'!K$55/'Income statement'!K$36
+L85: =='Cash flow statement'!L$55/'Income statement'!L$36
+M85: =='Cash flow statement'!M$55/'Income statement'!M$36
+N85: =='Cash flow statement'!N$55/'Income statement'!N$36
+O85: =='Cash flow statement'!O$55/'Income statement'!O$36
+P85: =='Cash flow statement'!P$55/'Income statement'!P$36
+Q85: =='Cash flow statement'!Q$55/'Income statement'!Q$36
+R85: =='Cash flow statement'!R$55/'Income statement'!R$36
+S85: =='Cash flow statement'!S$55/'Income statement'!S$36
+T85: =='Cash flow statement'!T$55/'Income statement'!T$36
+U85: =='Cash flow statement'!U$55/'Income statement'!U$36
+V85: =='Cash flow statement'!V$55/'Income statement'!V$36
+W85: =='Cash flow statement'!W$55/'Income statement'!W$36
+X85: =='Cash flow statement'!X$55/'Income statement'!X$36
+Y85: =='Cash flow statement'!Y$55/'Income statement'!Y$36
+Z85: =='Cash flow statement'!Z$55/'Income statement'!Z$36
+AA85: =='Cash flow statement'!AA$55/'Income statement'!AA$36
+AB85: =='Cash flow statement'!AB$55/'Income statement'!AB$36
+D86: =='Cash flow statement'!D$56/'Income statement'!D$36
+E86: =='Cash flow statement'!E$56/'Income statement'!E$36
+F86: =='Cash flow statement'!F$56/'Income statement'!F$36
+G86: =='Cash flow statement'!G$56/'Income statement'!G$36
+H86: =='Cash flow statement'!H$56/'Income statement'!H$36
+I86: =='Cash flow statement'!I$56/'Income statement'!I$36
+J86: =='Cash flow statement'!J$56/'Income statement'!J$36
+K86: =='Cash flow statement'!K$56/'Income statement'!K$36
+L86: =='Cash flow statement'!L$56/'Income statement'!L$36
+M86: =='Cash flow statement'!M$56/'Income statement'!M$36
+N86: =='Cash flow statement'!N$56/'Income statement'!N$36
+O86: =='Cash flow statement'!O$56/'Income statement'!O$36
+P86: =='Cash flow statement'!P$56/'Income statement'!P$36
+Q86: =='Cash flow statement'!Q$56/'Income statement'!Q$36
+R86: =='Cash flow statement'!R$56/'Income statement'!R$36
+S86: =='Cash flow statement'!S$56/'Income statement'!S$36
+T86: =='Cash flow statement'!T$56/'Income statement'!T$36
+U86: =='Cash flow statement'!U$56/'Income statement'!U$36
+V86: =='Cash flow statement'!V$56/'Income statement'!V$36
+W86: =='Cash flow statement'!W$56/'Income statement'!W$36
+X86: =='Cash flow statement'!X$56/'Income statement'!X$36
+Y86: =='Cash flow statement'!Y$56/'Income statement'!Y$36
+Z86: =='Cash flow statement'!Z$56/'Income statement'!Z$36
+AA86: =='Cash flow statement'!AA$56/'Income statement'!AA$36
+AB86: =='Cash flow statement'!AB$56/'Income statement'!AB$36
+D87: ==-D$32/D$36
+E87: ==-E$32/E$36
+F87: ==-F$32/F$36
+G87: ==-G$32/G$36
+H87: ==-H$32/H$36
+I87: ==-I$32/I$36
+J87: ==-J$32/J$36
+K87: ==-K$32/K$36
+L87: ==-L$32/L$36
+M87: ==-M$32/M$36
+N87: ==-N$32/N$36
+O87: ==-O$32/O$36
+P87: ==-P$32/P$36
+Q87: ==-Q$32/Q$36
+R87: ==-R$32/R$36
+S87: ==-S$32/S$36
+T87: ==-T$32/T$36
+U87: ==-U$32/U$36
+V87: ==-V$32/V$36
+W87: ==-W$32/W$36
+X87: ==-X$32/X$36
+Y87: ==-Y$32/Y$36
+Z87: ==-Z$32/Z$36
+AA87: ==-AA$32/AA$36
+AB87: ==-AB$32/AB$36
+D88: =='Cash flow statement'!D$52/D$36
+E88: =='Cash flow statement'!E$52/E$36
+F88: =='Cash flow statement'!F$52/F$36
+G88: =='Cash flow statement'!G$52/G$36
+H88: =='Cash flow statement'!H$52/H$36
+I88: =='Cash flow statement'!I$52/I$36
+J88: =='Cash flow statement'!J$52/J$36
+K88: =='Cash flow statement'!K$52/K$36
+L88: =='Cash flow statement'!L$52/L$36
+M88: =='Cash flow statement'!M$52/M$36
+N88: =='Cash flow statement'!N$52/N$36
+O88: =='Cash flow statement'!O$52/O$36
+P88: =='Cash flow statement'!P$52/P$36
+Q88: =='Cash flow statement'!Q$52/Q$36
+R88: =='Cash flow statement'!R$52/R$36
+S88: =='Cash flow statement'!S$52/S$36
+T88: =='Cash flow statement'!T$52/T$36
+U88: =='Cash flow statement'!U$52/U$36
+V88: =='Cash flow statement'!V$52/V$36
+W88: =='Cash flow statement'!W$52/W$36
+X88: =='Cash flow statement'!X$52/X$36
+Y88: =='Cash flow statement'!Y$52/Y$36
+Z88: =='Cash flow statement'!Z$52/Z$36
+AA88: =='Cash flow statement'!AA$52/AA$36
+AB88: =='Cash flow statement'!AB$52/AB$36
+C89: =='Balance sheet'!C$62/'Income statement'!C$35
+D89: =='Balance sheet'!D$62/'Income statement'!D$35
+E89: =='Balance sheet'!E$62/'Income statement'!E$35
+F89: =='Balance sheet'!F$62/'Income statement'!F$35
+G89: =='Balance sheet'!G$62/'Income statement'!G$35
+H89: =='Balance sheet'!H$62/'Income statement'!H$35
+I89: =='Balance sheet'!I$62/'Income statement'!I$35
+J89: =='Balance sheet'!J$62/'Income statement'!J$35
+K89: =='Balance sheet'!K$62/'Income statement'!K$35
+L89: =='Balance sheet'!L$62/'Income statement'!L$35
+M89: =='Balance sheet'!M$62/'Income statement'!M$35
+N89: =='Balance sheet'!N$62/'Income statement'!N$35
+O89: =='Balance sheet'!O$62/'Income statement'!O$35
+P89: =='Balance sheet'!P$62/'Income statement'!P$35
+Q89: =='Balance sheet'!Q$62/'Income statement'!Q$35
+R89: =='Balance sheet'!R$62/'Income statement'!R$35
+S89: =='Balance sheet'!S$62/'Income statement'!S$35
+T89: =='Balance sheet'!T$62/'Income statement'!T$35
+U89: =='Balance sheet'!U$62/'Income statement'!U$35
+V89: =='Balance sheet'!V$62/'Income statement'!V$35
+W89: =='Balance sheet'!W$62/'Income statement'!W$35
+X89: =='Balance sheet'!X$62/'Income statement'!X$35
+Y89: =='Balance sheet'!Y$62/'Income statement'!Y$35
+Z89: =='Balance sheet'!Z$62/'Income statement'!Z$35
+AA89: =='Balance sheet'!AA$62/'Income statement'!AA$35
+AB89: =='Balance sheet'!AB$62/'Income statement'!AB$35
+C90: =='Balance sheet'!C$31/'Income statement'!C$35
+D90: =='Balance sheet'!D$31/'Income statement'!D$35
+E90: =='Balance sheet'!E$31/'Income statement'!E$35
+F90: =='Balance sheet'!F$31/'Income statement'!F$35
+G90: =='Balance sheet'!G$31/'Income statement'!G$35
+H90: =='Balance sheet'!H$31/'Income statement'!H$35
+I90: =='Balance sheet'!I$31/'Income statement'!I$35
+J90: =='Balance sheet'!J$31/'Income statement'!J$35
+K90: =='Balance sheet'!K$31/'Income statement'!K$35
+L90: =='Balance sheet'!L$31/'Income statement'!L$35
+M90: =='Balance sheet'!M$31/'Income statement'!M$35
+N90: =='Balance sheet'!N$31/'Income statement'!N$35
+O90: =='Balance sheet'!O$31/'Income statement'!O$35
+P90: =='Balance sheet'!P$31/'Income statement'!P$35
+Q90: =='Balance sheet'!Q$31/'Income statement'!Q$35
+R90: =='Balance sheet'!R$31/'Income statement'!R$35
+S90: =='Balance sheet'!S$31/'Income statement'!S$35
+T90: =='Balance sheet'!T$31/'Income statement'!T$35
+U90: =='Balance sheet'!U$31/'Income statement'!U$35
+V90: =='Balance sheet'!V$31/'Income statement'!V$35
+W90: =='Balance sheet'!W$31/'Income statement'!W$35
+X90: =='Balance sheet'!X$31/'Income statement'!X$35
+Y90: =='Balance sheet'!Y$31/'Income statement'!Y$35
+Z90: =='Balance sheet'!Z$31/'Income statement'!Z$35
+AA90: =='Balance sheet'!AA$31/'Income statement'!AA$35
+AB90: =='Balance sheet'!AB$31/'Income statement'!AB$35
+C93: ==C$9/C$7
+D93: ==D$9/D$7
+E93: ==E$9/E$7
+F93: ==F$9/F$7
+G93: ==G$9/G$7
+H93: ==H$9/H$7
+I93: ==I$9/I$7
+J93: ==J$9/J$7
+K93: ==K$9/K$7
+L93: ==L$9/L$7
+M93: ==M$9/M$7
+N93: ==N$9/N$7
+O93: ==O$9/O$7
+P93: ==P$9/P$7
+Q93: ==Q$9/Q$7
+R93: ==R$9/R$7
+S93: ==S$9/S$7
+T93: ==T$9/T$7
+U93: ==U$9/U$7
+V93: ==V$9/V$7
+C94: ==C$24/C$7
+D94: ==D$24/D$7
+E94: ==E$24/E$7
+F94: ==F$24/F$7
+G94: ==G$24/G$7
+H94: ==H$24/H$7
+I94: ==I$24/I$7
+J94: ==J$24/J$7
+K94: ==K$24/K$7
+L94: ==L$24/L$7
+M94: ==M$24/M$7
+N94: ==N$24/N$7
+O94: ==O$24/O$7
+P94: ==P$24/P$7
+Q94: ==Q$24/Q$7
+R94: ==R$24/R$7
+S94: ==S$24/S$7
+T94: ==T$24/T$7
+U94: ==U$24/U$7
+V94: ==V$24/V$7
+W94: ==W$24/W$7
+X94: ==X$24/X$7
+Y94: ==Y$24/Y$7
+Z94: ==Z$24/Z$7
+AA94: ==AA$24/AA$7
+AB94: ==AB$24/AB$7
+C95: ==C$28/C$7
+D95: ==D$28/D$7
+E95: ==E$28/E$7
+F95: ==F$28/F$7
+G95: ==G$28/G$7
+H95: ==H$28/H$7
+I95: ==I$28/I$7
+J95: ==J$28/J$7
+K95: ==K$28/K$7
+L95: ==L$28/L$7
+M95: ==M$28/M$7
+N95: ==N$28/N$7
+O95: ==O$28/O$7
+P95: ==P$28/P$7
+Q95: ==Q$28/Q$7
+R95: ==R$28/R$7
+S95: ==S$28/S$7
+T95: ==T$28/T$7
+U95: ==U$28/U$7
+V95: ==V$28/V$7
+W95: ==W$28/W$7
+X95: ==X$28/X$7
+Y95: ==Y$28/Y$7
+Z95: ==Z$28/Z$7
+AA95: ==AA$28/AA$7
+AB95: ==AB$28/AB$7
+C96: ==1-C$58
+D96: ==1-D$58
+E96: ==1-E$58
+F96: ==1-F$58
+G96: ==1-G$58
+H96: ==1-H$58
+I96: ==1-I$58
+J96: ==1-J$58
+K96: ==1-K$58
+L96: ==1-L$58
+M96: ==1-M$58
+N96: ==1-N$58
+O96: ==1-O$58
+P96: ==1-P$58
+Q96: ==1-Q$58
+R96: ==1-R$58
+S96: ==1-S$58
+T96: ==1-T$58
+U96: ==1-U$58
+V96: ==1-V$58
+W96: ==1-W$58
+X96: ==1-X$58
+Y96: ==1-Y$58
+Z96: ==1-Z$58
+AA96: ==1-AA$58
+AB96: ==1-AB$58
+C97: ==C$24/AVERAGE('Balance sheet'!B$62:C$62)
+D97: ==D$24/AVERAGE('Balance sheet'!C$62:D$62)
+E97: ==E$24/AVERAGE('Balance sheet'!D$62:E$62)
+F97: ==F$24/AVERAGE('Balance sheet'!E$62:F$62)
+G97: ==G$24/AVERAGE('Balance sheet'!F$62:G$62)
+H97: ==H$24/AVERAGE('Balance sheet'!G$62:H$62)
+I97: ==I$24/AVERAGE('Balance sheet'!H$62:I$62)
+J97: ==J$24/AVERAGE('Balance sheet'!I$62:J$62)
+K97: ==K$24/AVERAGE('Balance sheet'!J$62:K$62)
+L97: ==L$24/AVERAGE('Balance sheet'!K$62:L$62)
+M97: ==M$24/AVERAGE('Balance sheet'!L$62:M$62)
+N97: ==N$24/AVERAGE('Balance sheet'!M$62:N$62)
+O97: ==O$24/AVERAGE('Balance sheet'!N$62:O$62)
+P97: ==P$24/AVERAGE('Balance sheet'!O$62:P$62)
+Q97: ==Q$24/AVERAGE('Balance sheet'!P$62:Q$62)
+R97: ==R$24/AVERAGE('Balance sheet'!Q$62:R$62)
+S97: ==S$24/AVERAGE('Balance sheet'!R$62:S$62)
+T97: ==T$24/AVERAGE('Balance sheet'!S$62:T$62)
+U97: ==U$24/AVERAGE('Balance sheet'!T$62:U$62)
+V97: ==V$24/AVERAGE('Balance sheet'!U$62:V$62)
+W97: ==W$24/AVERAGE('Balance sheet'!V$62:W$62)
+X97: ==X$24/AVERAGE('Balance sheet'!W$62:X$62)
+Y97: ==Y$24/AVERAGE('Balance sheet'!X$62:Y$62)
+Z97: ==Z$24/AVERAGE('Balance sheet'!Y$62:Z$62)
+AA97: ==AA$24/AVERAGE('Balance sheet'!Z$62:AA$62)
+AB97: ==AB$24/AVERAGE('Balance sheet'!AA$62:AB$62)
+D98: ==D$75/'Balance sheet'!D$64
+E98: ==E$75/'Balance sheet'!E$64
+F98: ==F$75/'Balance sheet'!F$64
+G98: ==G$75/'Balance sheet'!G$64
+H98: ==H$75/'Balance sheet'!H$64
+I98: ==I$75/'Balance sheet'!I$64
+J98: ==J$75/'Balance sheet'!J$64
+K98: ==K$75/'Balance sheet'!K$64
+L98: ==L$75/'Balance sheet'!L$64
+M98: ==M$75/'Balance sheet'!M$64
+N98: ==N$75/'Balance sheet'!N$64
+O98: ==O$75/'Balance sheet'!O$64
+P98: ==P$75/'Balance sheet'!P$64
+Q98: ==Q$75/'Balance sheet'!Q$64
+R98: ==R$75/'Balance sheet'!R$64
+S98: ==S$75/'Balance sheet'!S$64
+T98: ==T$75/'Balance sheet'!T$64
+U98: ==U$75/'Balance sheet'!U$64
+V98: ==V$75/'Balance sheet'!V$64
+W98: ==W$75/'Balance sheet'!W$64
+X98: ==X$75/'Balance sheet'!X$64
+Y98: ==Y$75/'Balance sheet'!Y$64
+Z98: ==Z$75/'Balance sheet'!Z$64
+AA98: ==AA$75/'Balance sheet'!AA$64
+AB98: ==AB$75/'Balance sheet'!AB$64
+D99: ==D$15/'Balance sheet'!D$66
+E99: ==E$15/'Balance sheet'!E$66
+F99: ==F$15/'Balance sheet'!F$66
+G99: ==G$15/'Balance sheet'!G$66
+H99: ==H$15/'Balance sheet'!H$66
+I99: ==I$15/'Balance sheet'!I$66
+J99: ==J$15/'Balance sheet'!J$66
+K99: ==K$15/'Balance sheet'!K$66
+L99: ==L$15/'Balance sheet'!L$66
+M99: ==M$15/'Balance sheet'!M$66
+N99: ==N$15/'Balance sheet'!N$66
+O99: ==O$15/'Balance sheet'!O$66
+P99: ==P$15/'Balance sheet'!P$66
+Q99: ==Q$15/'Balance sheet'!Q$66
+R99: ==R$15/'Balance sheet'!R$66
+S99: ==S$15/'Balance sheet'!S$66
+T99: ==T$15/'Balance sheet'!T$66
+U99: ==U$15/'Balance sheet'!U$66
+V99: ==V$15/'Balance sheet'!V$66
+W99: ==W$15/'Balance sheet'!W$66
+X99: ==X$15/'Balance sheet'!X$66
+Y99: ==Y$15/'Balance sheet'!Y$66
+Z99: ==Z$15/'Balance sheet'!Z$66
+AA99: ==AA$15/'Balance sheet'!AA$66
+AB99: ==AB$15/'Balance sheet'!AB$66
+D100: ==D$24/AVERAGE('Balance sheet'!C$31:D$31)
+E100: ==E$24/AVERAGE('Balance sheet'!D$31:E$31)
+F100: ==F$24/AVERAGE('Balance sheet'!E$31:F$31)
+G100: ==G$24/AVERAGE('Balance sheet'!F$31:G$31)
+H100: ==H$24/AVERAGE('Balance sheet'!G$31:H$31)
+I100: ==I$24/AVERAGE('Balance sheet'!H$31:I$31)
+J100: ==J$24/AVERAGE('Balance sheet'!I$31:J$31)
+K100: ==K$24/AVERAGE('Balance sheet'!J$31:K$31)
+L100: ==L$24/AVERAGE('Balance sheet'!K$31:L$31)
+M100: ==M$24/AVERAGE('Balance sheet'!L$31:M$31)
+N100: ==N$24/AVERAGE('Balance sheet'!M$31:N$31)
+O100: ==O$24/AVERAGE('Balance sheet'!N$31:O$31)
+P100: ==P$24/AVERAGE('Balance sheet'!O$31:P$31)
+Q100: ==Q$24/AVERAGE('Balance sheet'!P$31:Q$31)
+R100: ==R$24/AVERAGE('Balance sheet'!Q$31:R$31)
+S100: ==S$24/AVERAGE('Balance sheet'!R$31:S$31)
+T100: ==T$24/AVERAGE('Balance sheet'!S$31:T$31)
+U100: ==U$24/AVERAGE('Balance sheet'!T$31:U$31)
+V100: ==V$24/AVERAGE('Balance sheet'!U$31:V$31)
+W100: ==W$24/AVERAGE('Balance sheet'!V$31:W$31)
+X100: ==X$24/AVERAGE('Balance sheet'!W$31:X$31)
+Y100: ==Y$24/AVERAGE('Balance sheet'!X$31:Y$31)
+Z100: ==Z$24/AVERAGE('Balance sheet'!Y$31:Z$31)
+AA100: ==AA$24/AVERAGE('Balance sheet'!Z$31:AA$31)
+AB100: ==AB$24/AVERAGE('Balance sheet'!AA$31:AB$31)
+D103: ==D$9/C$9-1
+E103: ==E$9/D$9-1
+F103: ==F$9/E$9-1
+G103: ==G$9/F$9-1
+H103: ==H$9/G$9-1
+I103: ==I$9/H$9-1
+J103: ==J$9/I$9-1
+K103: ==K$9/J$9-1
+L103: ==L$9/K$9-1
+M103: ==M$9/L$9-1
+N103: ==N$9/M$9-1
+O103: ==O$9/N$9-1
+P103: ==P$9/O$9-1
+Q103: ==Q$9/P$9-1
+R103: ==R$9/Q$9-1
+S103: ==S$9/R$9-1
+T103: ==T$9/S$9-1
+U103: ==U$9/T$9-1
+V103: ==V$9/U$9-1
+D104: ==D$15/C$15-1
+E104: ==E$15/D$15-1
+F104: ==F$15/E$15-1
+G104: ==G$15/F$15-1
+H104: ==H$15/G$15-1
+I104: ==I$15/H$15-1
+J104: ==J$15/I$15-1
+K104: ==K$15/J$15-1
+L104: ==L$15/K$15-1
+M104: ==M$15/L$15-1
+N104: ==N$15/M$15-1
+O104: ==O$15/N$15-1
+P104: ==P$15/O$15-1
+Q104: ==Q$15/P$15-1
+R104: ==R$15/Q$15-1
+S104: ==S$15/R$15-1
+T104: ==T$15/S$15-1
+U104: ==U$15/T$15-1
+V104: ==V$15/U$15-1
+W104: ==W$15/V$15-1
+X104: ==X$15/W$15-1
+Y104: ==Y$15/X$15-1
+Z104: ==Z$15/Y$15-1
+AA104: ==AA$15/Z$15-1
+AB104: ==AB$15/AA$15-1
+D105: ==D$24/C$24-1
+E105: ==E$24/D$24-1
+F105: ==F$24/E$24-1
+G105: ==G$24/F$24-1
+H105: ==H$24/G$24-1
+I105: ==I$24/H$24-1
+J105: ==J$24/I$24-1
+K105: ==K$24/J$24-1
+L105: ==L$24/K$24-1
+M105: ==M$24/L$24-1
+N105: ==N$24/M$24-1
+O105: ==O$24/N$24-1
+P105: ==P$24/O$24-1
+Q105: ==Q$24/P$24-1
+R105: ==R$24/Q$24-1
+S105: ==S$24/R$24-1
+T105: ==T$24/S$24-1
+U105: ==U$24/T$24-1
+V105: ==V$24/U$24-1
+W105: ==W$24/V$24-1
+X105: ==X$24/W$24-1
+Y105: ==Y$24/X$24-1
+Z105: ==Z$24/Y$24-1
+AA105: ==AA$24/Z$24-1
+AB105: ==AB$24/AA$24-1
+D106: ==D$83/C$83-1
+E106: ==E$83/D$83-1
+F106: ==F$83/E$83-1
+G106: ==G$83/F$83-1
+H106: ==H$83/G$83-1
+I106: ==I$83/H$83-1
+J106: ==J$83/I$83-1
+K106: ==K$83/J$83-1
+L106: ==L$83/K$83-1
+M106: ==M$83/L$83-1
+N106: ==N$83/M$83-1
+O106: ==O$83/N$83-1
+P106: ==P$83/O$83-1
+Q106: ==Q$83/P$83-1
+R106: ==R$83/Q$83-1
+S106: ==S$83/R$83-1
+T106: ==T$83/S$83-1
+U106: ==U$83/T$83-1
+V106: ==V$83/U$83-1
+W106: ==W$84/V$84-1
+X106: ==X$84/W$84-1
+Y106: ==Y$84/X$84-1
+Z106: ==Z$84/Y$84-1
+AA106: ==AA$84/Z$84-1
+AB106: ==AB$84/AA$84-1
+D107: ==D$87/C$87-1
+E107: ==E$87/D$87-1
+F107: ==F$87/E$87-1
+G107: ==G$87/F$87-1
+H107: ==H$87/G$87-1
+I107: ==I$87/H$87-1
+J107: ==J$87/I$87-1
+K107: ==K$87/J$87-1
+L107: ==L$87/K$87-1
+M107: ==M$87/L$87-1
+N107: ==N$87/M$87-1
+O107: ==O$87/N$87-1
+P107: ==P$87/O$87-1
+Q107: ==Q$87/P$87-1
+R107: ==R$87/Q$87-1
+S107: ==S$87/R$87-1
+T107: ==T$87/S$87-1
+U107: ==U$87/T$87-1
+V107: ==V$87/U$87-1
+W107: ==W$87/V$87-1
+X107: ==X$87/W$87-1
+Y107: ==Y$87/X$87-1
+Z107: ==Z$87/Y$87-1
+AA107: ==AA$87/Z$87-1
+AB107: ==AB$87/AA$87-1
+
+[Sheet] Balance sheet
+B1: =='Start Here'!$H$5
+B2 (B2): =_xlfn.TEXTAFTER(CELL("filename"), "]")
+A7: ==_xlfn.XLOOKUP($B7,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C7 (C7:V7): =GET_FINANCIALS_LINE_ITEM(A7)
+W7: ==EOMONTH($V7,12)
+X7: ==EOMONTH($V7,12)
+Y7: ==EOMONTH($V7,12)
+Z7: ==EOMONTH($V7,12)
+AA7: ==EOMONTH($V7,12)
+AB7: ==EOMONTH($V7,12)
+C11 (C11:V11): =GET_FINANCIALS_LINE_ITEM(A11)
+W11: ==V$11+'Cash flow statement'!W$34
+X11: ==W$11+'Cash flow statement'!X$34
+Y11: ==X$11+'Cash flow statement'!Y$34
+Z11: ==Y$11+'Cash flow statement'!Z$34
+AA11: ==Z$11+'Cash flow statement'!AA$34
+AB11: ==AA$11+'Cash flow statement'!AB$34
+C13 (C13:V13): =GET_FINANCIALS_LINE_ITEM(A13)
+C14 (C14:V14): =GET_FINANCIALS_LINE_ITEM(A14)
+C15: ==C$16-SUM(C$13:C$14)
+D15: ==D$16-SUM(D$13:D$14)
+E15: ==E$16-SUM(E$13:E$14)
+F15: ==F$16-SUM(F$13:F$14)
+G15: ==G$16-SUM(G$13:G$14)
+H15: ==H$16-SUM(H$13:H$14)
+I15: ==I$16-SUM(I$13:I$14)
+J15: ==J$16-SUM(J$13:J$14)
+K15: ==K$16-SUM(K$13:K$14)
+L15: ==L$16-SUM(L$13:L$14)
+M15: ==M$16-SUM(M$13:M$14)
+N15: ==N$16-SUM(N$13:N$14)
+O15: ==O$16-SUM(O$13:O$14)
+P15: ==P$16-SUM(P$13:P$14)
+Q15: ==Q$16-SUM(Q$13:Q$14)
+R15: ==R$16-SUM(R$13:R$14)
+S15: ==S$16-SUM(S$13:S$14)
+T15: ==T$16-SUM(T$13:T$14)
+U15: ==U$16-SUM(U$13:U$14)
+V15: ==V$16-SUM(V$13:V$14)
+C16 (C16:V16): =GET_FINANCIALS_LINE_ITEM(A16)
+C17 (C17:V17): =GET_FINANCIALS_LINE_ITEM(A17)
+W18: ==W$70*'Income statement'!W$7
+X18: ==X$70*'Income statement'!X$7
+Y18: ==Y$70*'Income statement'!Y$7
+Z18: ==Z$70*'Income statement'!Z$7
+AA18: ==AA$70*'Income statement'!AA$7
+AB18: ==AB$70*'Income statement'!AB$7
+W19: ==W$71*'Income statement'!W$7
+X19: ==X$71*'Income statement'!X$7
+Y19: ==Y$71*'Income statement'!Y$7
+Z19: ==Z$71*'Income statement'!Z$7
+AA19: ==AA$71*'Income statement'!AA$7
+AB19: ==AB$71*'Income statement'!AB$7
+C20: ==C$21-SUM(C$11,C$16:C$17)
+D20: ==D$21-SUM(D$11,D$16:D$17)
+E20: ==E$21-SUM(E$11,E$16:E$17)
+F20: ==F$21-SUM(F$11,F$16:F$17)
+G20: ==G$21-SUM(G$11,G$16:G$17)
+H20: ==H$21-SUM(H$11,H$16:H$17)
+I20: ==I$21-SUM(I$11,I$16:I$17)
+J20: ==J$21-SUM(J$11,J$16:J$17)
+K20: ==K$21-SUM(K$11,K$16:K$17)
+L20: ==L$21-SUM(L$11,L$16:L$17)
+M20: ==M$21-SUM(M$11,M$16:M$17)
+N20: ==N$21-SUM(N$11,N$16:N$17)
+O20: ==O$21-SUM(O$11,O$16:O$17)
+P20: ==P$21-SUM(P$11,P$16:P$17)
+Q20: ==Q$21-SUM(Q$11,Q$16:Q$17)
+R20: ==R$21-SUM(R$11,R$16:R$17)
+S20: ==S$21-SUM(S$11,S$16:S$17)
+T20: ==T$21-SUM(T$11,T$16:T$17)
+U20: ==U$21-SUM(U$11,U$16:U$17)
+V20: ==V$21-SUM(V$11,V$16:V$17)
+C21 (C21:V21): =GET_FINANCIALS_LINE_ITEM(A21)
+W21: ==W$11+W$18+W$19
+X21: ==SUM(X$11,X$16:X$20)
+Y21: ==SUM(Y$11,Y$16:Y$20)
+Z21: ==SUM(Z$11,Z$16:Z$20)
+AA21: ==SUM(AA$11,AA$16:AA$20)
+AB21: ==SUM(AB$11,AB$16:AB$20)
+C24 (C24:V24): =GET_FINANCIALS_LINE_ITEM(A24)
+C25 (C25:V25): =GET_FINANCIALS_LINE_ITEM(A25)
+C26 (C26:V26): =GET_FINANCIALS_LINE_ITEM(A26)
+W27: ==W$59
+X27: ==X$59
+Y27: ==Y$59
+Z27: ==Z$59
+AA27: ==AA$59
+AB27: ==AB$59
+C28 (C28:V28): =GET_FINANCIALS_LINE_ITEM(A28)
+W28: ==V28
+X28: ==W28
+Y28: ==X28
+Z28: ==Y28
+AA28: ==Z28
+AB28: ==AA28
+C29: ==C$30-SUM(C$24:C$28)
+D29: ==D$30-SUM(D$24:D$28)
+E29: ==E$30-SUM(E$24:E$28)
+F29: ==F$30-SUM(F$24:F$28)
+G29: ==G$30-SUM(G$24:G$28)
+H29: ==H$30-SUM(H$24:H$28)
+I29: ==I$30-SUM(I$24:I$28)
+J29: ==J$30-SUM(J$24:J$28)
+K29: ==K$30-SUM(K$24:K$28)
+L29: ==L$30-SUM(L$24:L$28)
+M29: ==M$30-SUM(M$24:M$28)
+N29: ==N$30-SUM(N$24:N$28)
+O29: ==O$30-SUM(O$24:O$28)
+P29: ==P$30-SUM(P$24:P$28)
+Q29: ==Q$30-SUM(Q$24:Q$28)
+R29: ==R$30-SUM(R$24:R$28)
+S29: ==S$30-SUM(S$24:S$28)
+T29: ==T$30-SUM(T$24:T$28)
+U29: ==U$30-SUM(U$24:U$28)
+V29: ==V$30-SUM(V$24:V$28)
+W29: ==V29
+X29: ==W29
+Y29: ==X29
+Z29: ==Y29
+AA29: ==Z29
+AB29: ==AA29
+C30: ==C$31-C$21
+D30: ==D$31-D$21
+E30: ==E$31-E$21
+F30: ==F$31-F$21
+G30: ==G$31-G$21
+H30: ==H$31-H$21
+I30: ==I$31-I$21
+J30: ==J$31-J$21
+K30: ==K$31-K$21
+L30: ==L$31-L$21
+M30: ==M$31-M$21
+N30: ==N$31-N$21
+O30: ==O$31-O$21
+P30: ==P$31-P$21
+Q30: ==Q$31-Q$21
+R30: ==R$31-R$21
+S30: ==S$31-S$21
+T30: ==T$31-T$21
+U30: ==U$31-U$21
+V30: ==V$31-V$21
+W30: ==SUM(W$24:W$29)
+X30: ==SUM(X$24:X$29)
+Y30: ==SUM(Y$24:Y$29)
+Z30: ==SUM(Z$24:Z$29)
+AA30: ==SUM(AA$24:AA$29)
+AB30: ==SUM(AB$24:AB$29)
+C31 (C31:V31): =GET_FINANCIALS_LINE_ITEM(A31)
+W31: ==W$21+W$30
+X31: ==X$21+X$30
+Y31: ==Y$21+Y$30
+Z31: ==Z$21+Z$30
+AA31: ==AA$21+AA$30
+AB31: ==AB$21+AB$30
+C35 (C35:V35): =GET_FINANCIALS_LINE_ITEM(A35)
+W35: ==V35
+X35: ==W35
+Y35: ==X35
+Z35: ==Y35
+AA35: ==Z35
+AB35: ==AA35
+C36 (C36:V36): =GET_FINANCIALS_LINE_ITEM(A36)
+C37: ==C$38-SUM(C$35:C$36)
+D37: ==D$38-SUM(D$35:D$36)
+E37: ==E$38-SUM(E$35:E$36)
+F37: ==F$38-SUM(F$35:F$36)
+G37: ==G$38-SUM(G$35:G$36)
+H37: ==H$38-SUM(H$35:H$36)
+I37: ==I$38-SUM(I$35:I$36)
+J37: ==J$38-SUM(J$35:J$36)
+K37: ==K$38-SUM(K$35:K$36)
+L37: ==L$38-SUM(L$35:L$36)
+M37: ==M$38-SUM(M$35:M$36)
+N37: ==N$38-SUM(N$35:N$36)
+O37: ==O$38-SUM(O$35:O$36)
+P37: ==P$38-SUM(P$35:P$36)
+Q37: ==Q$38-SUM(Q$35:Q$36)
+R37: ==R$38-SUM(R$35:R$36)
+S37: ==S$38-SUM(S$35:S$36)
+T37: ==T$38-SUM(T$35:T$36)
+U37: ==U$38-SUM(U$35:U$36)
+V37: ==V$38-SUM(V$35:V$36)
+C38 (C38:V38): =GET_FINANCIALS_LINE_ITEM(A38)
+W38: ==SUM(W$35:W$37)
+X38: ==SUM(X$35:X$37)
+Y38: ==SUM(Y$35:Y$37)
+Z38: ==SUM(Z$35:Z$37)
+AA38: ==SUM(AA$35:AA$37)
+AB38: ==SUM(AB$35:AB$37)
+C41 (C41:V41): =GET_FINANCIALS_LINE_ITEM(A41)
+W41: ==V41
+X41: ==W41
+Y41: ==X41
+Z41: ==Y41
+AA41: ==Z41
+AB41: ==AA41
+C42: ==C$43-C$41
+D42: ==D$43-D$41
+E42: ==E$43-E$41
+F42: ==F$43-F$41
+G42: ==G$43-G$41
+H42: ==H$43-H$41
+I42: ==I$43-I$41
+J42: ==J$43-J$41
+K42: ==K$43-K$41
+L42: ==L$43-L$41
+M42: ==M$43-M$41
+N42: ==N$43-N$41
+O42: ==O$43-O$41
+P42: ==P$43-P$41
+Q42: ==Q$43-Q$41
+R42: ==R$43-R$41
+S42: ==S$43-S$41
+T42: ==T$43-T$41
+U42: ==U$43-U$41
+V42: ==V$43-V$41
+W42: ==V42
+X42: ==W42
+Y42: ==X42
+Z42: ==Y42
+AA42: ==Z42
+AB42: ==AA42
+C43: ==C$44-C$38
+D43: ==D$44-D$38
+E43: ==E$44-E$38
+F43: ==F$44-F$38
+G43: ==G$44-G$38
+H43: ==H$44-H$38
+I43: ==I$44-I$38
+J43: ==J$44-J$38
+K43: ==K$44-K$38
+L43: ==L$44-L$38
+M43: ==M$44-M$38
+N43: ==N$44-N$38
+O43: ==O$44-O$38
+P43: ==P$44-P$38
+Q43: ==Q$44-Q$38
+R43: ==R$44-R$38
+S43: ==S$44-S$38
+T43: ==T$44-T$38
+U43: ==U$44-U$38
+V43: ==V$44-V$38
+W43: ==SUM(W$41:W$42)
+X43: ==SUM(X$41:X$42)
+Y43: ==SUM(Y$41:Y$42)
+Z43: ==SUM(Z$41:Z$42)
+AA43: ==SUM(AA$41:AA$42)
+AB43: ==SUM(AB$41:AB$42)
+C44 (C44:V44): =GET_FINANCIALS_LINE_ITEM(A44)
+W44: ==W$38+W$43
+X44: ==X$38+X$43
+Y44: ==Y$38+Y$43
+Z44: ==Z$38+Z$43
+AA44: ==AA$38+AA$43
+AB44: ==AB$38+AB$43
+C47 (C47:V47): =GET_FINANCIALS_LINE_ITEM(A47)
+W47: ==V$47+'Income statement'!W$33
+X47: ==W$47+'Income statement'!X$33
+Y47: ==X$47+'Income statement'!Y$33
+Z47: ==Y$47+'Income statement'!Z$33
+AA47: ==Z$47+'Income statement'!AA$33
+AB47: ==AA$47+'Income statement'!AB$33
+C48 (C48:V48): =GET_FINANCIALS_LINE_ITEM(A48)
+W48: ==V48
+X48: ==W48
+Y48: ==X48
+Z48: ==Y48
+AA48: ==Z48
+AB48: ==AA48
+C49 (C49:V49): =GET_FINANCIALS_LINE_ITEM(A49)
+W49: ==V49
+X49: ==W49
+Y49: ==X49
+Z49: ==Y49
+AA49: ==Z49
+AB49: ==AA49
+C50: ==C$51-SUM(C$47:C$49)
+D50: ==D$51-SUM(D$47:D$49)
+E50: ==E$51-SUM(E$47:E$49)
+F50: ==F$51-SUM(F$47:F$49)
+G50: ==G$51-SUM(G$47:G$49)
+H50: ==H$51-SUM(H$47:H$49)
+I50: ==I$51-SUM(I$47:I$49)
+J50: ==J$51-SUM(J$47:J$49)
+K50: ==K$51-SUM(K$47:K$49)
+L50: ==L$51-SUM(L$47:L$49)
+M50: ==M$51-SUM(M$47:M$49)
+N50: ==N$51-SUM(N$47:N$49)
+O50: ==O$51-SUM(O$47:O$49)
+P50: ==P$51-SUM(P$47:P$49)
+Q50: ==Q$51-SUM(Q$47:Q$49)
+R50: ==R$51-SUM(R$47:R$49)
+S50: ==S$51-SUM(S$47:S$49)
+T50: ==T$51-SUM(T$47:T$49)
+U50: ==U$51-SUM(U$47:U$49)
+V50: ==V$51-SUM(V$47:V$49)
+W50: ==V50
+X50: ==W50
+Y50: ==X50
+Z50: ==Y50
+AA50: ==Z50
+AB50: ==AA50
+C51: ==C$31-C$44
+D51: ==D$31-D$44
+E51: ==E$31-E$44
+F51: ==F$31-F$44
+G51: ==G$31-G$44
+H51: ==H$31-H$44
+I51: ==I$31-I$44
+J51: ==J$31-J$44
+K51: ==K$31-K$44
+L51: ==L$31-L$44
+M51: ==M$31-M$44
+N51: ==N$31-N$44
+O51: ==O$31-O$44
+P51: ==P$31-P$44
+Q51: ==Q$31-Q$44
+R51: ==R$31-R$44
+S51: ==S$31-S$44
+T51: ==T$31-T$44
+U51: ==U$31-U$44
+V51: ==V$31-V$44
+W51: ==SUM(W$47:W$50)
+X51: ==SUM(X$47:X$50)
+Y51: ==SUM(Y$47:Y$50)
+Z51: ==SUM(Z$47:Z$50)
+AA51: ==SUM(AA$47:AA$50)
+AB51: ==SUM(AB$47:AB$50)
+C52: ==C$31-C$44-C$51
+D52: ==D$31-D$44-D$51
+E52: ==E$31-E$44-E$51
+F52: ==F$31-F$44-F$51
+G52: ==G$31-G$44-G$51
+H52: ==H$31-H$44-H$51
+I52: ==I$31-I$44-I$51
+J52: ==J$31-J$44-J$51
+K52: ==K$31-K$44-K$51
+L52: ==L$31-L$44-L$51
+M52: ==M$31-M$44-M$51
+N52: ==N$31-N$44-N$51
+O52: ==O$31-O$44-O$51
+P52: ==P$31-P$44-P$51
+Q52: ==Q$31-Q$44-Q$51
+R52: ==R$31-R$44-R$51
+S52: ==S$31-S$44-S$51
+T52: ==T$31-T$44-T$51
+U52: ==U$31-U$44-U$51
+V52: ==V$31-V$44-V$51
+W52: ==W$31-W$44-W$51
+X52: ==X$31-X$44-X$51
+Y52: ==Y$31-Y$44-Y$51
+Z52: ==Z$31-Z$44-Z$51
+AA52: ==AA$31-AA$44-AA$51
+AB52: ==AB$31-AB$44-AB$51
+C57: ==C$16+C$17+C$18-C$36
+D57: ==D$16+D$17+D$18-D$36
+E57: ==E$16+E$17+E$18-E$36
+F57: ==F$16+F$17+F$18-F$36
+G57: ==G$16+G$17+G$18-G$36
+H57: ==H$16+H$17+H$18-H$36
+I57: ==I$16+I$17+I$18-I$36
+J57: ==J$16+J$17+J$18-J$36
+K57: ==K$16+K$17+K$18-K$36
+L57: ==L$16+L$17+L$18-L$36
+M57: ==M$16+M$17+M$18-M$36
+N57: ==N$16+N$17+N$18-N$36
+O57: ==O$16+O$17+O$18-O$36
+P57: ==P$16+P$17+P$18-P$36
+Q57: ==Q$16+Q$17+Q$18-Q$36
+R57: ==R$16+R$17+R$18-R$36
+S57: ==S$16+S$17+S$18-S$36
+T57: ==T$16+T$17+T$18-T$36
+U57: ==U$16+U$17+U$18-U$36
+V57: ==V$16+V$17+V$18-V$36
+W57: ==W$16+W$17+W$18-W$36
+X57: ==X$16+X$17+X$18-X$36
+Y57: ==Y$16+Y$17+Y$18-Y$36
+Z57: ==Z$16+Z$17+Z$18-Z$36
+AA57: ==AA$16+AA$17+AA$18-AA$36
+AB57: ==AB$16+AB$17+AB$18-AB$36
+C58: ==C$20-C$37
+D58: ==D$20-D$37
+E58: ==E$20-E$37
+F58: ==F$20-F$37
+G58: ==G$20-G$37
+H58: ==H$20-H$37
+I58: ==I$20-I$37
+J58: ==J$20-J$37
+K58: ==K$20-K$37
+L58: ==L$20-L$37
+M58: ==M$20-M$37
+N58: ==N$20-N$37
+O58: ==O$20-O$37
+P58: ==P$20-P$37
+Q58: ==Q$20-Q$37
+R58: ==R$20-R$37
+S58: ==S$20-S$37
+T58: ==T$20-T$37
+U58: ==U$20-U$37
+V58: ==V$20-V$37
+W58: ==W$20+W$19-W$37
+X58: ==X$20+X$19-X$37
+Y58: ==Y$20+Y$19-Y$37
+Z58: ==Z$20+Z$19-Z$37
+AA58: ==AA$20+AA$19-AA$37
+AB58: ==AB$20+AB$19-AB$37
+C59: ==C$24+C$25+C$26
+D59: ==D$24+D$25+D$26
+E59: ==E$24+E$25+E$26
+F59: ==F$24+F$25+F$26
+G59: ==G$24+G$25+G$26
+H59: ==H$24+H$25+H$26
+I59: ==I$24+I$25+I$26
+J59: ==J$24+J$25+J$26
+K59: ==K$24+K$25+K$26
+L59: ==L$24+L$25+L$26
+M59: ==M$24+M$25+M$26
+N59: ==N$24+N$25+N$26
+O59: ==O$24+O$25+O$26
+P59: ==P$24+P$25+P$26
+Q59: ==Q$24+Q$25+Q$26
+R59: ==R$24+R$25+R$26
+S59: ==S$24+S$25+S$26
+T59: ==T$24+T$25+T$26
+U59: ==U$24+U$25+U$26
+V59: ==V$24+V$25+V$26
+W59: ==V$59+'Cash flow statement'!W$48-'Cash flow statement'!W$14
+X59: ==W$59+'Cash flow statement'!X$48-'Cash flow statement'!X$14
+Y59: ==X$59+'Cash flow statement'!Y$48-'Cash flow statement'!Y$14
+Z59: ==Y$59+'Cash flow statement'!Z$48-'Cash flow statement'!Z$14
+AA59: ==Z$59+'Cash flow statement'!AA$48-'Cash flow statement'!AA$14
+AB59: ==AA$59+'Cash flow statement'!AB$48-'Cash flow statement'!AB$14
+C60: ==C$11-C$35-C$41
+D60: ==D$11-D$35-D$41
+E60: ==E$11-E$35-E$41
+F60: ==F$11-F$35-F$41
+G60: ==G$11-G$35-G$41
+H60: ==H$11-H$35-H$41
+I60: ==I$11-I$35-I$41
+J60: ==J$11-J$35-J$41
+K60: ==K$11-K$35-K$41
+L60: ==L$11-L$35-L$41
+M60: ==M$11-M$35-M$41
+N60: ==N$11-N$35-N$41
+O60: ==O$11-O$35-O$41
+P60: ==P$11-P$35-P$41
+Q60: ==Q$11-Q$35-Q$41
+R60: ==R$11-R$35-R$41
+S60: ==S$11-S$35-S$41
+T60: ==T$11-T$35-T$41
+U60: ==U$11-U$35-U$41
+V60: ==V$11-V$35-V$41
+W60: ==W$11-W$35-W$41
+X60: ==X$11-X$35-X$41
+Y60: ==Y$11-Y$35-Y$41
+Z60: ==Z$11-Z$35-Z$41
+AA60: ==AA$11-AA$35-AA$41
+AB60: ==AB$11-AB$35-AB$41
+C61: ==C$60+C$28
+D61: ==D$60+D$28
+E61: ==E$60+E$28
+F61: ==F$60+F$28
+G61: ==G$60+G$28
+H61: ==H$60+H$28
+I61: ==I$60+I$28
+J61: ==J$60+J$28
+K61: ==K$60+K$28
+L61: ==L$60+L$28
+M61: ==M$60+M$28
+N61: ==N$60+N$28
+O61: ==O$60+O$28
+P61: ==P$60+P$28
+Q61: ==Q$60+Q$28
+R61: ==R$60+R$28
+S61: ==S$60+S$28
+T61: ==T$60+T$28
+U61: ==U$60+U$28
+V61: ==V$60+V$28
+W61: ==W$60+W$28
+X61: ==X$60+X$28
+Y61: ==Y$60+Y$28
+Z61: ==Z$60+Z$28
+AA61: ==AA$60+AA$28
+AB61: ==AB$60+AB$28
+C62: ==C$51-C$26
+D62: ==D$51-D$26
+E62: ==E$51-E$26
+F62: ==F$51-F$26
+G62: ==G$51-G$26
+H62: ==H$51-H$26
+I62: ==I$51-I$26
+J62: ==J$51-J$26
+K62: ==K$51-K$26
+L62: ==L$51-L$26
+M62: ==M$51-M$26
+N62: ==N$51-N$26
+O62: ==O$51-O$26
+P62: ==P$51-P$26
+Q62: ==Q$51-Q$26
+R62: ==R$51-R$26
+S62: ==S$51-S$26
+T62: ==T$51-T$26
+U62: ==U$51-U$26
+V62: ==V$51-V$26
+W62: ==W$51-W$26
+X62: ==X$51-X$26
+Y62: ==Y$51-Y$26
+Z62: ==Z$51-Z$26
+AA62: ==AA$51-AA$26
+AB62: ==AB$51-AB$26
+C63: ==C$51-C$60
+D63: ==D$51-D$60
+E63: ==E$51-E$60
+F63: ==F$51-F$60
+G63: ==G$51-G$60
+H63: ==H$51-H$60
+I63: ==I$51-I$60
+J63: ==J$51-J$60
+K63: ==K$51-K$60
+L63: ==L$51-L$60
+M63: ==M$51-M$60
+N63: ==N$51-N$60
+O63: ==O$51-O$60
+P63: ==P$51-P$60
+Q63: ==Q$51-Q$60
+R63: ==R$51-R$60
+S63: ==S$51-S$60
+T63: ==T$51-T$60
+U63: ==U$51-U$60
+V63: ==V$51-V$60
+W63: ==W$51-W$60
+X63: ==X$51-X$60
+Y63: ==Y$51-Y$60
+Z63: ==Z$51-Z$60
+AA63: ==AA$51-AA$60
+AB63: ==AB$51-AB$60
+D64: ==AVERAGE(C$63:D$63)
+E64: ==AVERAGE(D$63:E$63)
+F64: ==AVERAGE(E$63:F$63)
+G64: ==AVERAGE(F$63:G$63)
+H64: ==AVERAGE(G$63:H$63)
+I64: ==AVERAGE(H$63:I$63)
+J64: ==AVERAGE(I$63:J$63)
+K64: ==AVERAGE(J$63:K$63)
+L64: ==AVERAGE(K$63:L$63)
+M64: ==AVERAGE(L$63:M$63)
+N64: ==AVERAGE(M$63:N$63)
+O64: ==AVERAGE(N$63:O$63)
+P64: ==AVERAGE(O$63:P$63)
+Q64: ==AVERAGE(P$63:Q$63)
+R64: ==AVERAGE(Q$63:R$63)
+S64: ==AVERAGE(R$63:S$63)
+T64: ==AVERAGE(S$63:T$63)
+U64: ==AVERAGE(T$63:U$63)
+V64: ==AVERAGE(U$63:V$63)
+W64: ==AVERAGE(V$63:W$63)
+X64: ==AVERAGE(W$63:X$63)
+Y64: ==AVERAGE(X$63:Y$63)
+Z64: ==AVERAGE(Y$63:Z$63)
+AA64: ==AVERAGE(Z$63:AA$63)
+AB64: ==AVERAGE(AA$63:AB$63)
+C65: =='Balance sheet'!C$31-'Balance sheet'!C$38-C$29
+D65: =='Balance sheet'!D$31-'Balance sheet'!D$38-D$29
+E65: =='Balance sheet'!E$31-'Balance sheet'!E$38-E$29
+F65: =='Balance sheet'!F$31-'Balance sheet'!F$38-F$29
+G65: =='Balance sheet'!G$31-'Balance sheet'!G$38-G$29
+H65: =='Balance sheet'!H$31-'Balance sheet'!H$38-H$29
+I65: =='Balance sheet'!I$31-'Balance sheet'!I$38-I$29
+J65: =='Balance sheet'!J$31-'Balance sheet'!J$38-J$29
+K65: =='Balance sheet'!K$31-'Balance sheet'!K$38-K$29
+L65: =='Balance sheet'!L$31-'Balance sheet'!L$38-L$29
+M65: =='Balance sheet'!M$31-'Balance sheet'!M$38-M$29
+N65: =='Balance sheet'!N$31-'Balance sheet'!N$38-N$29
+O65: =='Balance sheet'!O$31-'Balance sheet'!O$38-O$29
+P65: =='Balance sheet'!P$31-'Balance sheet'!P$38-P$29
+Q65: =='Balance sheet'!Q$31-'Balance sheet'!Q$38-Q$29
+R65: =='Balance sheet'!R$31-'Balance sheet'!R$38-R$29
+S65: =='Balance sheet'!S$31-'Balance sheet'!S$38-S$29
+T65: =='Balance sheet'!T$31-'Balance sheet'!T$38-T$29
+U65: =='Balance sheet'!U$31-'Balance sheet'!U$38-U$29
+V65: =='Balance sheet'!V$31-'Balance sheet'!V$38-V$29
+W65: =='Balance sheet'!W$31-'Balance sheet'!W$38-W$29
+X65: =='Balance sheet'!X$31-'Balance sheet'!X$38-X$29
+Y65: =='Balance sheet'!Y$31-'Balance sheet'!Y$38-Y$29
+Z65: =='Balance sheet'!Z$31-'Balance sheet'!Z$38-Z$29
+AA65: =='Balance sheet'!AA$31-'Balance sheet'!AA$38-AA$29
+AB65: =='Balance sheet'!AB$31-'Balance sheet'!AB$38-AB$29
+D66: ==AVERAGE(C$65:D$65)
+E66: ==AVERAGE(D$65:E$65)
+F66: ==AVERAGE(E$65:F$65)
+G66: ==AVERAGE(F$65:G$65)
+H66: ==AVERAGE(G$65:H$65)
+I66: ==AVERAGE(H$65:I$65)
+J66: ==AVERAGE(I$65:J$65)
+K66: ==AVERAGE(J$65:K$65)
+L66: ==AVERAGE(K$65:L$65)
+M66: ==AVERAGE(L$65:M$65)
+N66: ==AVERAGE(M$65:N$65)
+O66: ==AVERAGE(N$65:O$65)
+P66: ==AVERAGE(O$65:P$65)
+Q66: ==AVERAGE(P$65:Q$65)
+R66: ==AVERAGE(Q$65:R$65)
+S66: ==AVERAGE(R$65:S$65)
+T66: ==AVERAGE(S$65:T$65)
+U66: ==AVERAGE(T$65:U$65)
+V66: ==AVERAGE(U$65:V$65)
+W66: ==AVERAGE(V$65:W$65)
+X66: ==AVERAGE(W$65:X$65)
+Y66: ==AVERAGE(X$65:Y$65)
+Z66: ==AVERAGE(Y$65:Z$65)
+AA66: ==AVERAGE(Z$65:AA$65)
+AB66: ==AVERAGE(AA$65:AB$65)
+C70: ==C$57/'Income statement'!C$7
+D70: ==D$57/'Income statement'!D$7
+E70: ==E$57/'Income statement'!E$7
+F70: ==F$57/'Income statement'!F$7
+G70: ==G$57/'Income statement'!G$7
+H70: ==H$57/'Income statement'!H$7
+I70: ==I$57/'Income statement'!I$7
+J70: ==J$57/'Income statement'!J$7
+K70: ==K$57/'Income statement'!K$7
+L70: ==L$57/'Income statement'!L$7
+M70: ==M$57/'Income statement'!M$7
+N70: ==N$57/'Income statement'!N$7
+O70: ==O$57/'Income statement'!O$7
+P70: ==P$57/'Income statement'!P$7
+Q70: ==Q$57/'Income statement'!Q$7
+R70: ==R$57/'Income statement'!R$7
+S70: ==S$57/'Income statement'!S$7
+T70: ==T$57/'Income statement'!T$7
+U70: ==U$57/'Income statement'!U$7
+V70: ==V$57/'Income statement'!V$7
+W70: ==_xlfn.AGGREGATE(1,2,$M70:$V70)
+X70: ==W70
+Y70: ==X70
+Z70: ==Y70
+AA70: ==Z70
+AB70: ==AA70
+C71: ==C$58/'Income statement'!C$7
+D71: ==D$58/'Income statement'!D$7
+E71: ==E$58/'Income statement'!E$7
+F71: ==F$58/'Income statement'!F$7
+G71: ==G$58/'Income statement'!G$7
+H71: ==H$58/'Income statement'!H$7
+I71: ==I$58/'Income statement'!I$7
+J71: ==J$58/'Income statement'!J$7
+K71: ==K$58/'Income statement'!K$7
+L71: ==L$58/'Income statement'!L$7
+M71: ==M$58/'Income statement'!M$7
+N71: ==N$58/'Income statement'!N$7
+O71: ==O$58/'Income statement'!O$7
+P71: ==P$58/'Income statement'!P$7
+Q71: ==Q$58/'Income statement'!Q$7
+R71: ==R$58/'Income statement'!R$7
+S71: ==S$58/'Income statement'!S$7
+T71: ==T$58/'Income statement'!T$7
+U71: ==U$58/'Income statement'!U$7
+V71: ==V$58/'Income statement'!V$7
+W71: ==_xlfn.AGGREGATE(1,2,$M71:$V71)
+X71: ==W71
+Y71: ==X71
+Z71: ==Y71
+AA71: ==Z71
+AB71: ==AA71
+
+[Sheet] Cash flow statement
+B1: =='Start Here'!$H$5
+B2 (B2): =_xlfn.TEXTAFTER(CELL("filename"), "]")
+D6: ==C$6+1
+E6: ==D$6+1
+F6: ==E$6+1
+G6: ==F$6+1
+H6: ==G$6+1
+I6: ==H$6+1
+J6: ==I$6+1
+K6: ==J$6+1
+L6: ==K$6+1
+M6: ==L$6+1
+N6: ==M$6+1
+O6: ==N$6+1
+P6: ==O$6+1
+Q6: ==P$6+1
+R6: ==Q$6+1
+S6: ==R$6+1
+T6: ==S$6+1
+U6: ==T$6+1
+V6: ==U$6+1
+A10: ==_xlfn.XLOOKUP($B10,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C10 (C10:V10): =GET_FINANCIALS_LINE_ITEM(A10)
+W10: ==EOMONTH($V10,12)
+X10: ==EOMONTH($V10,12)
+Y10: ==EOMONTH($V10,12)
+Z10: ==EOMONTH($V10,12)
+AA10: ==EOMONTH($V10,12)
+AB10: ==EOMONTH($V10,12)
+C11: =='Income statement'!C$28
+D11: =='Income statement'!D$28
+E11: =='Income statement'!E$28
+F11: =='Income statement'!F$28
+G11: =='Income statement'!G$28
+H11: =='Income statement'!H$28
+I11: =='Income statement'!I$28
+J11: =='Income statement'!J$28
+K11: =='Income statement'!K$28
+L11: =='Income statement'!L$28
+M11: =='Income statement'!M$28
+N11: =='Income statement'!N$28
+O11: =='Income statement'!O$28
+P11: =='Income statement'!P$28
+Q11: =='Income statement'!Q$28
+R11: =='Income statement'!R$28
+S11: =='Income statement'!S$28
+T11: =='Income statement'!T$28
+U11: =='Income statement'!U$28
+V11: =='Income statement'!V$28
+W11: =='Income statement'!W$28
+X11: =='Income statement'!X$28
+Y11: =='Income statement'!Y$28
+Z11: =='Income statement'!Z$28
+AA11: =='Income statement'!AA$28
+AB11: =='Income statement'!AB$28
+C12: ==-'Income statement'!C$11
+D12: ==-'Income statement'!D$11
+E12: ==-'Income statement'!E$11
+F12: ==-'Income statement'!F$11
+G12: ==-'Income statement'!G$11
+H12: ==-'Income statement'!H$11
+I12: ==-'Income statement'!I$11
+J12: ==-'Income statement'!J$11
+K12: ==-'Income statement'!K$11
+L12: ==-'Income statement'!L$11
+M12: ==-'Income statement'!M$11
+N12: ==-'Income statement'!N$11
+O12: ==-'Income statement'!O$11
+P12: ==-'Income statement'!P$11
+Q12: ==-'Income statement'!Q$11
+R12: ==-'Income statement'!R$11
+S12: ==-'Income statement'!S$11
+T12: ==-'Income statement'!T$11
+U12: ==-'Income statement'!U$11
+V12: ==-'Income statement'!V$11
+C13: ==-'Income statement'!C$12
+D13: ==-'Income statement'!D$12
+E13: ==-'Income statement'!E$12
+F13: ==-'Income statement'!F$12
+G13: ==-'Income statement'!G$12
+H13: ==-'Income statement'!H$12
+I13: ==-'Income statement'!I$12
+J13: ==-'Income statement'!J$12
+K13: ==-'Income statement'!K$12
+L13: ==-'Income statement'!L$12
+M13: ==-'Income statement'!M$12
+N13: ==-'Income statement'!N$12
+O13: ==-'Income statement'!O$12
+P13: ==-'Income statement'!P$12
+Q13: ==-'Income statement'!Q$12
+R13: ==-'Income statement'!R$12
+S13: ==-'Income statement'!S$12
+T13: ==-'Income statement'!T$12
+U13: ==-'Income statement'!U$12
+V13: ==-'Income statement'!V$12
+W14: ==W$49
+X14: ==X$49
+Y14: ==Y$49
+Z14: ==Z$49
+AA14: ==AA$49
+AB14: ==AB$49
+C15: ==-('Balance sheet'!C$57-'Balance sheet'!B$57)
+D15: ==-('Balance sheet'!D$57-'Balance sheet'!C$57)
+E15: ==-('Balance sheet'!E$57-'Balance sheet'!D$57)
+F15: ==-('Balance sheet'!F$57-'Balance sheet'!E$57)
+G15: ==-('Balance sheet'!G$57-'Balance sheet'!F$57)
+H15: ==-('Balance sheet'!H$57-'Balance sheet'!G$57)
+I15: ==-('Balance sheet'!I$57-'Balance sheet'!H$57)
+J15: ==-('Balance sheet'!J$57-'Balance sheet'!I$57)
+K15: ==-('Balance sheet'!K$57-'Balance sheet'!J$57)
+L15: ==-('Balance sheet'!L$57-'Balance sheet'!K$57)
+M15: ==-('Balance sheet'!M$57-'Balance sheet'!L$57)
+N15: ==-('Balance sheet'!N$57-'Balance sheet'!M$57)
+O15: ==-('Balance sheet'!O$57-'Balance sheet'!N$57)
+P15: ==-('Balance sheet'!P$57-'Balance sheet'!O$57)
+Q15: ==-('Balance sheet'!Q$57-'Balance sheet'!P$57)
+R15: ==-('Balance sheet'!R$57-'Balance sheet'!Q$57)
+S15: ==-('Balance sheet'!S$57-'Balance sheet'!R$57)
+T15: ==-('Balance sheet'!T$57-'Balance sheet'!S$57)
+U15: ==-('Balance sheet'!U$57-'Balance sheet'!T$57)
+V15: ==-('Balance sheet'!V$57-'Balance sheet'!U$57)
+W15: ==-('Balance sheet'!W$57-'Balance sheet'!V$57)
+X15: ==-('Balance sheet'!X$57-'Balance sheet'!W$57)
+Y15: ==-('Balance sheet'!Y$57-'Balance sheet'!X$57)
+Z15: ==-('Balance sheet'!Z$57-'Balance sheet'!Y$57)
+AA15: ==-('Balance sheet'!AA$57-'Balance sheet'!Z$57)
+AB15: ==-('Balance sheet'!AB$57-'Balance sheet'!AA$57)
+W16: ==-('Balance sheet'!W$58-'Balance sheet'!V$58)
+X16: ==-('Balance sheet'!X$58-'Balance sheet'!W$58)
+Y16: ==-('Balance sheet'!Y$58-'Balance sheet'!X$58)
+Z16: ==-('Balance sheet'!Z$58-'Balance sheet'!Y$58)
+AA16: ==-('Balance sheet'!AA$58-'Balance sheet'!Z$58)
+AB16: ==-('Balance sheet'!AB$58-'Balance sheet'!AA$58)
+C17: ==C$18-SUM(C$11:C$15)
+D17: ==D$18-SUM(D$11:D$15)
+E17: ==E$18-SUM(E$11:E$15)
+F17: ==F$18-SUM(F$11:F$15)
+G17: ==G$18-SUM(G$11:G$15)
+H17: ==H$18-SUM(H$11:H$15)
+I17: ==I$18-SUM(I$11:I$15)
+J17: ==J$18-SUM(J$11:J$15)
+K17: ==K$18-SUM(K$11:K$15)
+L17: ==L$18-SUM(L$11:L$15)
+M17: ==M$18-SUM(M$11:M$15)
+N17: ==N$18-SUM(N$11:N$15)
+O17: ==O$18-SUM(O$11:O$15)
+P17: ==P$18-SUM(P$11:P$15)
+Q17: ==Q$18-SUM(Q$11:Q$15)
+R17: ==R$18-SUM(R$11:R$15)
+S17: ==S$18-SUM(S$11:S$15)
+T17: ==T$18-SUM(T$11:T$15)
+U17: ==U$18-SUM(U$11:U$15)
+V17: ==V$18-SUM(V$11:V$15)
+A18: ==_xlfn.XLOOKUP($B18,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C18 (C18:V18): =GET_FINANCIALS_LINE_ITEM(A18)
+W18: ==SUM(W$11:W$17)
+X18: ==SUM(X$11:X$17)
+Y18: ==SUM(Y$11:Y$17)
+Z18: ==SUM(Z$11:Z$17)
+AA18: ==SUM(AA$11:AA$17)
+AB18: ==SUM(AB$11:AB$17)
+A20: ==_xlfn.XLOOKUP($B20,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C20 (C20:V20): =-GET_FINANCIALS_LINE_ITEM(A20)
+A21: ==_xlfn.XLOOKUP($B21,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C21 (C21:V21): =-GET_FINANCIALS_LINE_ITEM(A21)
+A22: ==_xlfn.XLOOKUP($B22,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C22 (C22:V22): =GET_FINANCIALS_LINE_ITEM(A22)
+W23: ==-W$41*'Income statement'!W$7
+X23: ==-X$41*'Income statement'!X$7
+Y23: ==-Y$41*'Income statement'!Y$7
+Z23: ==-Z$41*'Income statement'!Z$7
+AA23: ==-AA$41*'Income statement'!AA$7
+AB23: ==-AB$41*'Income statement'!AB$7
+C24: ==C$25-SUM(C$20:C$22)
+D24: ==D$25-SUM(D$20:D$22)
+E24: ==E$25-SUM(E$20:E$22)
+F24: ==F$25-SUM(F$20:F$22)
+G24: ==G$25-SUM(G$20:G$22)
+H24: ==H$25-SUM(H$20:H$22)
+I24: ==I$25-SUM(I$20:I$22)
+J24: ==J$25-SUM(J$20:J$22)
+K24: ==K$25-SUM(K$20:K$22)
+L24: ==L$25-SUM(L$20:L$22)
+M24: ==M$25-SUM(M$20:M$22)
+N24: ==N$25-SUM(N$20:N$22)
+O24: ==O$25-SUM(O$20:O$22)
+P24: ==P$25-SUM(P$20:P$22)
+Q24: ==Q$25-SUM(Q$20:Q$22)
+R24: ==R$25-SUM(R$20:R$22)
+S24: ==S$25-SUM(S$20:S$22)
+T24: ==T$25-SUM(T$20:T$22)
+U24: ==U$25-SUM(U$20:U$22)
+V24: ==V$25-SUM(V$20:V$22)
+A25: ==_xlfn.XLOOKUP($B25,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C25 (C25:V25): =GET_FINANCIALS_LINE_ITEM(A25)
+W25: ==SUM(W$20:W$24)
+X25: ==SUM(X$20:X$24)
+Y25: ==SUM(Y$20:Y$24)
+Z25: ==SUM(Z$20:Z$24)
+AA25: ==SUM(AA$20:AA$24)
+AB25: ==SUM(AB$20:AB$24)
+C27: =='Income statement'!C32
+D27: =='Income statement'!D32
+E27: =='Income statement'!E32
+F27: =='Income statement'!F32
+G27: =='Income statement'!G32
+H27: =='Income statement'!H32
+I27: =='Income statement'!I32
+J27: =='Income statement'!J32
+K27: =='Income statement'!K32
+L27: =='Income statement'!L32
+M27: =='Income statement'!M32
+N27: =='Income statement'!N32
+O27: =='Income statement'!O32
+P27: =='Income statement'!P32
+Q27: =='Income statement'!Q32
+R27: =='Income statement'!R32
+S27: =='Income statement'!S32
+T27: =='Income statement'!T32
+U27: =='Income statement'!U32
+V27: =='Income statement'!V32
+W27: =='Income statement'!W32
+X27: =='Income statement'!X32
+Y27: =='Income statement'!Y32
+Z27: =='Income statement'!Z32
+AA27: =='Income statement'!AA32
+AB27: =='Income statement'!AB32
+A28: ==_xlfn.XLOOKUP($B28,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C28 (C28:V28): =-GET_FINANCIALS_LINE_ITEM(A28)
+A29: ==_xlfn.XLOOKUP($B29,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C29 (C29:V29): =GET_FINANCIALS_LINE_ITEM(A29)
+A30: ==_xlfn.XLOOKUP($B30,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C30 (C30:V30): =GET_FINANCIALS_LINE_ITEM(A30)
+C31: ==C$32-SUM(C$27:C$30)
+D31: ==D$32-SUM(D$27:D$30)
+E31: ==E$32-SUM(E$27:E$30)
+F31: ==F$32-SUM(F$27:F$30)
+G31: ==G$32-SUM(G$27:G$30)
+H31: ==H$32-SUM(H$27:H$30)
+I31: ==I$32-SUM(I$27:I$30)
+J31: ==J$32-SUM(J$27:J$30)
+K31: ==K$32-SUM(K$27:K$30)
+L31: ==L$32-SUM(L$27:L$30)
+M31: ==M$32-SUM(M$27:M$30)
+N31: ==N$32-SUM(N$27:N$30)
+O31: ==O$32-SUM(O$27:O$30)
+P31: ==P$32-SUM(P$27:P$30)
+Q31: ==Q$32-SUM(Q$27:Q$30)
+R31: ==R$32-SUM(R$27:R$30)
+S31: ==S$32-SUM(S$27:S$30)
+T31: ==T$32-SUM(T$27:T$30)
+U31: ==U$32-SUM(U$27:U$30)
+V31: ==V$32-SUM(V$27:V$30)
+A32: ==_xlfn.XLOOKUP($B32,'Line item mapping'!$B:$B,'Line item mapping'!$A:$A)
+C32 (C32:V32): =GET_FINANCIALS_LINE_ITEM(A32)
+W32: ==SUM(W$27:W$31)
+X32: ==SUM(X$27:X$31)
+Y32: ==SUM(Y$27:Y$31)
+Z32: ==SUM(Z$27:Z$31)
+AA32: ==SUM(AA$27:AA$31)
+AB32: ==SUM(AB$27:AB$31)
+C34: ==C$18+C$25+C$32
+D34: ==D$18+D$25+D$32
+E34: ==E$18+E$25+E$32
+F34: ==F$18+F$25+F$32
+G34: ==G$18+G$25+G$32
+H34: ==H$18+H$25+H$32
+I34: ==I$18+I$25+I$32
+J34: ==J$18+J$25+J$32
+K34: ==K$18+K$25+K$32
+L34: ==L$18+L$25+L$32
+M34: ==M$18+M$25+M$32
+N34: ==N$18+N$25+N$32
+O34: ==O$18+O$25+O$32
+P34: ==P$18+P$25+P$32
+Q34: ==Q$18+Q$25+Q$32
+R34: ==R$18+R$25+R$32
+S34: ==S$18+S$25+S$32
+T34: ==T$18+T$25+T$32
+U34: ==U$18+U$25+U$32
+V34: ==V$18+V$25+V$32
+W34: ==W$18+W$25+W$32
+X34: ==X$18+X$25+X$32
+Y34: ==Y$18+Y$25+Y$32
+Z34: ==Z$18+Z$25+Z$32
+AA34: ==AA$18+AA$25+AA$32
+AB34: ==AB$18+AB$25+AB$32
+W39: ==AVERAGE($R41:$V41)
+X39: ==W41
+Y39: ==X41
+Z39: ==Y41
+AA39: ==Z41
+AB39: ==AA41
+C41: ==C$48/'Income statement'!C$7
+D41: ==D$48/'Income statement'!D$7
+E41: ==E$48/'Income statement'!E$7
+F41: ==F$48/'Income statement'!F$7
+G41: ==G$48/'Income statement'!G$7
+H41: ==H$48/'Income statement'!H$7
+I41: ==I$48/'Income statement'!I$7
+J41: ==J$48/'Income statement'!J$7
+K41: ==K$48/'Income statement'!K$7
+L41: ==L$48/'Income statement'!L$7
+M41: ==M$48/'Income statement'!M$7
+N41: ==N$48/'Income statement'!N$7
+O41: ==O$48/'Income statement'!O$7
+P41: ==P$48/'Income statement'!P$7
+Q41: ==Q$48/'Income statement'!Q$7
+R41: ==R$48/'Income statement'!R$7
+S41: ==S$48/'Income statement'!S$7
+T41: ==T$48/'Income statement'!T$7
+U41: ==U$48/'Income statement'!U$7
+V41: ==V$48/'Income statement'!V$7
+W41 (W41): =_xlfn.SWITCH(W40,,W39,W40)
+X41 (X41): =_xlfn.SWITCH(X40,,X39,X40)
+Y41 (Y41): =_xlfn.SWITCH(Y40,,Y39,Y40)
+Z41 (Z41): =_xlfn.SWITCH(Z40,,Z39,Z40)
+AA41 (AA41): =_xlfn.SWITCH(AA40,,AA39,AA40)
+AB41 (AB41): =_xlfn.SWITCH(AB40,,AB39,AB40)
+W43 (W43): =ARGMIN($L$67:$L$76)
+X43: ==W45
+Y43: ==X45
+Z43: ==Y45
+AA43: ==Z45
+AB43: ==AA45
+C45: ==D$45
+D45: ==E$45
+E45: ==F$45
+F45: ==G$45
+G45: ==H$45
+H45: ==I$45
+I45: ==J$45
+J45: ==K$45
+K45: ==L$45
+L45: ==M$45
+M45: ==N$45
+N45: ==O$45
+O45: ==P$45
+P45: ==Q$45
+Q45: ==R$45
+R45: ==S$45
+S45: ==T$45
+T45: ==U$45
+U45: ==V$45
+V45: ==W$45
+W45 (W45): =_xlfn.SWITCH(W44,,W43,W44)
+X45 (X45): =_xlfn.SWITCH(X44,,X43,X44)
+Y45 (Y45): =_xlfn.SWITCH(Y44,,Y43,Y44)
+Z45 (Z45): =_xlfn.SWITCH(Z44,,Z43,Z44)
+AA45 (AA45): =_xlfn.SWITCH(AA44,,AA43,AA44)
+AB45 (AB45): =_xlfn.SWITCH(AB44,,AB43,AB44)
+C48: ==-(C$20+C$21+C$22+C$23)
+D48: ==-(D$20+D$21+D$22+D$23)
+E48: ==-(E$20+E$21+E$22+E$23)
+F48: ==-(F$20+F$21+F$22+F$23)
+G48: ==-(G$20+G$21+G$22+G$23)
+H48: ==-(H$20+H$21+H$22+H$23)
+I48: ==-(I$20+I$21+I$22+I$23)
+J48: ==-(J$20+J$21+J$22+J$23)
+K48: ==-(K$20+K$21+K$22+K$23)
+L48: ==-(L$20+L$21+L$22+L$23)
+M48: ==-(M$20+M$21+M$22+M$23)
+N48: ==-(N$20+N$21+N$22+N$23)
+O48: ==-(O$20+O$21+O$22+O$23)
+P48: ==-(P$20+P$21+P$22+P$23)
+Q48: ==-(Q$20+Q$21+Q$22+Q$23)
+R48: ==-(R$20+R$21+R$22+R$23)
+S48: ==-(S$20+S$21+S$22+S$23)
+T48: ==-(T$20+T$21+T$22+T$23)
+U48: ==-(U$20+U$21+U$22+U$23)
+V48: ==-(V$20+V$21+V$22+V$23)
+W48: ==-(W$20+W$21+W$22+W$23)
+X48: ==-(X$20+X$21+X$22+X$23)
+Y48: ==-(Y$20+Y$21+Y$22+Y$23)
+Z48: ==-(Z$20+Z$21+Z$22+Z$23)
+AA48: ==-(AA$20+AA$21+AA$22+AA$23)
+AB48: ==-(AB$20+AB$21+AB$22+AB$23)
+C49: ==AVERAGE(OFFSET(C$48,,,1,-MIN(C$6,C$45)))
+D49: ==AVERAGE(OFFSET(D$48,,,1,-MIN(D$6,D$45)))
+E49: ==AVERAGE(OFFSET(E$48,,,1,-MIN(E$6,E$45)))
+F49: ==AVERAGE(OFFSET(F$48,,,1,-MIN(F$6,F$45)))
+G49: ==AVERAGE(OFFSET(G$48,,,1,-MIN(G$6,G$45)))
+H49: ==AVERAGE(OFFSET(H$48,,,1,-MIN(H$6,H$45)))
+I49: ==AVERAGE(OFFSET(I$48,,,1,-MIN(I$6,I$45)))
+J49: ==AVERAGE(OFFSET(J$48,,,1,-MIN(J$6,J$45)))
+K49: ==AVERAGE(OFFSET(K$48,,,1,-MIN(K$6,K$45)))
+L49: ==AVERAGE(OFFSET(L$48,,,1,-MIN(L$6,L$45)))
+M49: ==AVERAGE(OFFSET(M$48,,,1,-MIN(M$6,M$45)))
+N49: ==AVERAGE(OFFSET(N$48,,,1,-MIN(N$6,N$45)))
+O49: ==AVERAGE(OFFSET(O$48,,,1,-MIN(O$6,O$45)))
+P49: ==AVERAGE(OFFSET(P$48,,,1,-MIN(P$6,P$45)))
+Q49: ==AVERAGE(OFFSET(Q$48,,,1,-MIN(Q$6,Q$45)))
+R49: ==AVERAGE(OFFSET(R$48,,,1,-MIN(R$6,R$45)))
+S49: ==AVERAGE(OFFSET(S$48,,,1,-MIN(S$6,S$45)))
+T49: ==AVERAGE(OFFSET(T$48,,,1,-MIN(T$6,T$45)))
+U49: ==AVERAGE(OFFSET(U$48,,,1,-MIN(U$6,U$45)))
+V49: ==AVERAGE(OFFSET(V$48,,,1,-MIN(V$6,V$45)))
+W49: ==AVERAGE(OFFSET(W$48,,,1,-W$45))
+X49: ==AVERAGE(OFFSET(X$48,,,1,-X$45))
+Y49: ==AVERAGE(OFFSET(Y$48,,,1,-Y$45))
+Z49: ==AVERAGE(OFFSET(Z$48,,,1,-Z$45))
+AA49: ==AVERAGE(OFFSET(AA$48,,,1,-AA$45))
+AB49: ==AVERAGE(OFFSET(AB$48,,,1,-AB$45))
+C50: =='Income statement'!C$74
+D50: =='Income statement'!D$74
+E50: =='Income statement'!E$74
+F50: =='Income statement'!F$74
+G50: =='Income statement'!G$74
+H50: =='Income statement'!H$74
+I50: =='Income statement'!I$74
+J50: =='Income statement'!J$74
+K50: =='Income statement'!K$74
+L50: =='Income statement'!L$74
+M50: =='Income statement'!M$74
+N50: =='Income statement'!N$74
+O50: =='Income statement'!O$74
+P50: =='Income statement'!P$74
+Q50: =='Income statement'!Q$74
+R50: =='Income statement'!R$74
+S50: =='Income statement'!S$74
+T50: =='Income statement'!T$74
+U50: =='Income statement'!U$74
+V50: =='Income statement'!V$74
+C51: ==C49-C50
+D51: ==D49-D50
+E51: ==E49-E50
+F51: ==F49-F50
+G51: ==G49-G50
+H51: ==H49-H50
+I51: ==I49-I50
+J51: ==J49-J50
+K51: ==K49-K50
+L51: ==L49-L50
+M51: ==M49-M50
+N51: ==N49-N50
+O51: ==O49-O50
+P51: ==P49-P50
+Q51: ==Q49-Q50
+R51: ==R49-R50
+S51: ==S49-S50
+T51: ==T49-T50
+U51: ==U49-U50
+V51: ==V49-V50
+C52: ==-(C$27+C$28+C$29)
+D52: ==-(D$27+D$28+D$29)
+E52: ==-(E$27+E$28+E$29)
+F52: ==-(F$27+F$28+F$29)
+G52: ==-(G$27+G$28+G$29)
+H52: ==-(H$27+H$28+H$29)
+I52: ==-(I$27+I$28+I$29)
+J52: ==-(J$27+J$28+J$29)
+K52: ==-(K$27+K$28+K$29)
+L52: ==-(L$27+L$28+L$29)
+M52: ==-(M$27+M$28+M$29)
+N52: ==-(N$27+N$28+N$29)
+O52: ==-(O$27+O$28+O$29)
+P52: ==-(P$27+P$28+P$29)
+Q52: ==-(Q$27+Q$28+Q$29)
+R52: ==-(R$27+R$28+R$29)
+S52: ==-(S$27+S$28+S$29)
+T52: ==-(T$27+T$28+T$29)
+U52: ==-(U$27+U$28+U$29)
+V52: ==-(V$27+V$28+V$29)
+W52: ==-(W$27+W$28+W$29)
+X52: ==-(X$27+X$28+X$29)
+Y52: ==-(Y$27+Y$28+Y$29)
+Z52: ==-(Z$27+Z$28+Z$29)
+AA52: ==-(AA$27+AA$28+AA$29)
+AB52: ==-(AB$27+AB$28+AB$29)
+C55: ==C$18-C$48
+D55: ==D$18-D$48
+E55: ==E$18-E$48
+F55: ==F$18-F$48
+G55: ==G$18-G$48
+H55: ==H$18-H$48
+I55: ==I$18-I$48
+J55: ==J$18-J$48
+K55: ==K$18-K$48
+L55: ==L$18-L$48
+M55: ==M$18-M$48
+N55: ==N$18-N$48
+O55: ==O$18-O$48
+P55: ==P$18-P$48
+Q55: ==Q$18-Q$48
+R55: ==R$18-R$48
+S55: ==S$18-S$48
+T55: ==T$18-T$48
+U55: ==U$18-U$48
+V55: ==V$18-V$48
+W55: ==W$18-W$48
+X55: ==X$18-X$48
+Y55: ==Y$18-Y$48
+Z55: ==Z$18-Z$48
+AA55: ==AA$18-AA$48
+AB55: ==AB$18-AB$48
+C56: ==C$55-IFERROR(C$15,0)*(1-Config!$B$25)
+D56: ==D$55-IFERROR(D$15,0)*(1-Config!$B$25)
+E56: ==E$55-IFERROR(E$15,0)*(1-Config!$B$25)
+F56: ==F$55-IFERROR(F$15,0)*(1-Config!$B$25)
+G56: ==G$55-IFERROR(G$15,0)*(1-Config!$B$25)
+H56: ==H$55-IFERROR(H$15,0)*(1-Config!$B$25)
+I56: ==I$55-IFERROR(I$15,0)*(1-Config!$B$25)
+J56: ==J$55-IFERROR(J$15,0)*(1-Config!$B$25)
+K56: ==K$55-IFERROR(K$15,0)*(1-Config!$B$25)
+L56: ==L$55-IFERROR(L$15,0)*(1-Config!$B$25)
+M56: ==M$55-IFERROR(M$15,0)*(1-Config!$B$25)
+N56: ==N$55-IFERROR(N$15,0)*(1-Config!$B$25)
+O56: ==O$55-IFERROR(O$15,0)*(1-Config!$B$25)
+P56: ==P$55-IFERROR(P$15,0)*(1-Config!$B$25)
+Q56: ==Q$55-IFERROR(Q$15,0)*(1-Config!$B$25)
+R56: ==R$55-IFERROR(R$15,0)*(1-Config!$B$25)
+S56: ==S$55-IFERROR(S$15,0)*(1-Config!$B$25)
+T56: ==T$55-IFERROR(T$15,0)*(1-Config!$B$25)
+U56: ==U$55-IFERROR(U$15,0)*(1-Config!$B$25)
+V56: ==V$55-IFERROR(V$15,0)*(1-Config!$B$25)
+W56: ==W$55-IFERROR(W$15,0)*(1-Config!$B$25)
+X56: ==X$55-IFERROR(X$15,0)*(1-Config!$B$25)
+Y56: ==Y$55-IFERROR(Y$15,0)*(1-Config!$B$25)
+Z56: ==Z$55-IFERROR(Z$15,0)*(1-Config!$B$25)
+AA56: ==AA$55-IFERROR(AA$15,0)*(1-Config!$B$25)
+AB56: ==AB$55-IFERROR(AB$15,0)*(1-Config!$B$25)
+C57: ==-C$20/'Income statement'!C$7
+D57: ==-D$20/'Income statement'!D$7
+E57: ==-E$20/'Income statement'!E$7
+F57: ==-F$20/'Income statement'!F$7
+G57: ==-G$20/'Income statement'!G$7
+H57: ==-H$20/'Income statement'!H$7
+I57: ==-I$20/'Income statement'!I$7
+J57: ==-J$20/'Income statement'!J$7
+K57: ==-K$20/'Income statement'!K$7
+L57: ==-L$20/'Income statement'!L$7
+M57: ==-M$20/'Income statement'!M$7
+N57: ==-N$20/'Income statement'!N$7
+O57: ==-O$20/'Income statement'!O$7
+P57: ==-P$20/'Income statement'!P$7
+Q57: ==-Q$20/'Income statement'!Q$7
+R57: ==-R$20/'Income statement'!R$7
+S57: ==-S$20/'Income statement'!S$7
+T57: ==-T$20/'Income statement'!T$7
+U57: ==-U$20/'Income statement'!U$7
+V57: ==-V$20/'Income statement'!V$7
+C58: ==-C$21/'Income statement'!C$7
+D58: ==-D$21/'Income statement'!D$7
+E58: ==-E$21/'Income statement'!E$7
+F58: ==-F$21/'Income statement'!F$7
+G58: ==-G$21/'Income statement'!G$7
+H58: ==-H$21/'Income statement'!H$7
+I58: ==-I$21/'Income statement'!I$7
+J58: ==-J$21/'Income statement'!J$7
+K58: ==-K$21/'Income statement'!K$7
+L58: ==-L$21/'Income statement'!L$7
+M58: ==-M$21/'Income statement'!M$7
+N58: ==-N$21/'Income statement'!N$7
+O58: ==-O$21/'Income statement'!O$7
+P58: ==-P$21/'Income statement'!P$7
+Q58: ==-Q$21/'Income statement'!Q$7
+R58: ==-R$21/'Income statement'!R$7
+S58: ==-S$21/'Income statement'!S$7
+T58: ==-T$21/'Income statement'!T$7
+U58: ==-U$21/'Income statement'!U$7
+V58: ==-V$21/'Income statement'!V$7
+C59: ==C$56/'Income statement'!C$7
+D59: ==D$56/'Income statement'!D$7
+E59: ==E$56/'Income statement'!E$7
+F59: ==F$56/'Income statement'!F$7
+G59: ==G$56/'Income statement'!G$7
+H59: ==H$56/'Income statement'!H$7
+I59: ==I$56/'Income statement'!I$7
+J59: ==J$56/'Income statement'!J$7
+K59: ==K$56/'Income statement'!K$7
+L59: ==L$56/'Income statement'!L$7
+M59: ==M$56/'Income statement'!M$7
+N59: ==N$56/'Income statement'!N$7
+O59: ==O$56/'Income statement'!O$7
+P59: ==P$56/'Income statement'!P$7
+Q59: ==Q$56/'Income statement'!Q$7
+R59: ==R$56/'Income statement'!R$7
+S59: ==S$56/'Income statement'!S$7
+T59: ==T$56/'Income statement'!T$7
+U59: ==U$56/'Income statement'!U$7
+V59: ==V$56/'Income statement'!V$7
+W59: ==W$56/'Income statement'!W$7
+X59: ==X$56/'Income statement'!X$7
+Y59: ==Y$56/'Income statement'!Y$7
+Z59: ==Z$56/'Income statement'!Z$7
+AA59: ==AA$56/'Income statement'!AA$7
+AB59: ==AB$56/'Income statement'!AB$7
+C60: ==C$56/C$11
+D60: ==D$56/D$11
+E60: ==E$56/E$11
+F60: ==F$56/F$11
+G60: ==G$56/G$11
+H60: ==H$56/H$11
+I60: ==I$56/I$11
+J60: ==J$56/J$11
+K60: ==K$56/K$11
+L60: ==L$56/L$11
+M60: ==M$56/M$11
+N60: ==N$56/N$11
+O60: ==O$56/O$11
+P60: ==P$56/P$11
+Q60: ==Q$56/Q$11
+R60: ==R$56/R$11
+S60: ==S$56/S$11
+T60: ==T$56/T$11
+U60: ==U$56/U$11
+V60: ==V$56/V$11
+W60: ==W$56/W$11
+X60: ==X$56/X$11
+Y60: ==Y$56/Y$11
+Z60: ==Z$56/Z$11
+AA60: ==AA$56/AA$11
+AB60: ==AB$56/AB$11
+C63 (C63:V63): =_xlfn.ANCHORARRAY('Income statement'!$C$74)
+D66: ==TEXT(S$10, "yyyy-mm-dd")
+E66: ==TEXT(T$10, "yyyy-mm-dd")
+F66: ==TEXT(U$10, "yyyy-mm-dd")
+G66: ==TEXT(V$10, "yyyy-mm-dd")
+H66: ==TEXT(W$10, "yyyy-mm-dd")
+I66: ==TEXT(X$10, "yyyy-mm-dd")
+J66: ==TEXT(Y$10, "yyyy-mm-dd")
+K66: ==TEXT(Z$10, "yyyy-mm-dd")
+C67 (C67:C76): =_xlfn.SEQUENCE(10)
+D67 (D67:G67): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C67)))))
+E67: ==
+F67: ==
+G67: ==
+H67 (H67:K67): =_xlfn.ANCHORARRAY(D67)/$S$63:$V$63
+I67: ==
+J67: ==
+K67: ==
+L67 (L67): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H67),NOT(ISERROR(_xlfn.ANCHORARRAY($H67)))))),"-")
+D68 (D68:G68): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C68)))))
+E68: ==
+F68: ==
+G68: ==
+H68 (H68:K68): =_xlfn.ANCHORARRAY(D68)/$S$63:$V$63
+I68: ==
+J68: ==
+K68: ==
+L68 (L68): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H68),NOT(ISERROR(_xlfn.ANCHORARRAY($H68)))))),"-")
+D69 (D69:G69): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C69)))))
+E69: ==
+F69: ==
+G69: ==
+H69 (H69:K69): =_xlfn.ANCHORARRAY(D69)/$S$63:$V$63
+I69: ==
+J69: ==
+K69: ==
+L69 (L69): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H69),NOT(ISERROR(_xlfn.ANCHORARRAY($H69)))))),"-")
+D70 (D70:G70): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C70)))))
+E70: ==
+F70: ==
+G70: ==
+H70 (H70:K70): =_xlfn.ANCHORARRAY(D70)/$S$63:$V$63
+I70: ==
+J70: ==
+K70: ==
+L70 (L70): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H70),NOT(ISERROR(_xlfn.ANCHORARRAY($H70)))))),"-")
+D71 (D71:G71): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C71)))))
+E71: ==
+F71: ==
+G71: ==
+H71 (H71:K71): =_xlfn.ANCHORARRAY(D71)/$S$63:$V$63
+I71: ==
+J71: ==
+K71: ==
+L71 (L71): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H71),NOT(ISERROR(_xlfn.ANCHORARRAY($H71)))))),"-")
+D72 (D72:G72): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C72)))))
+E72: ==
+F72: ==
+G72: ==
+H72 (H72:K72): =_xlfn.ANCHORARRAY(D72)/$S$63:$V$63
+I72: ==
+J72: ==
+K72: ==
+L72 (L72): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H72),NOT(ISERROR(_xlfn.ANCHORARRAY($H72)))))),"-")
+D73 (D73:G73): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C73)))))
+E73: ==
+F73: ==
+G73: ==
+H73 (H73:K73): =_xlfn.ANCHORARRAY(D73)/$S$63:$V$63
+I73: ==
+J73: ==
+K73: ==
+L73 (L73): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H73),NOT(ISERROR(_xlfn.ANCHORARRAY($H73)))))),"-")
+D74 (D74:G74): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C74)))))
+E74: ==
+F74: ==
+G74: ==
+H74 (H74:K74): =_xlfn.ANCHORARRAY(D74)/$S$63:$V$63
+I74: ==
+J74: ==
+K74: ==
+L74 (L74): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H74),NOT(ISERROR(_xlfn.ANCHORARRAY($H74)))))),"-")
+D75 (D75:G75): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C75)))))
+E75: ==
+F75: ==
+G75: ==
+H75 (H75:K75): =_xlfn.ANCHORARRAY(D75)/$S$63:$V$63
+I75: ==
+J75: ==
+K75: ==
+L75 (L75): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H75),NOT(ISERROR(_xlfn.ANCHORARRAY($H75)))))),"-")
+D76 (D76:G76): =_xlfn.BYCOL($S$48:$V$48,_xlfn.LAMBDA(_xlpm.c,AVERAGE(OFFSET(_xlpm.c,,,1,-MIN(V$6,$C76)))))
+E76: ==
+F76: ==
+G76: ==
+H76 (H76:K76): =_xlfn.ANCHORARRAY(D76)/$S$63:$V$63
+I76: ==
+J76: ==
+K76: ==
+L76 (L76): =IFERROR(AVEDEV(LN(_xlfn._xlws.FILTER(_xlfn.ANCHORARRAY($H76),NOT(ISERROR(_xlfn.ANCHORARRAY($H76)))))),"-")
+
+[Sheet] Valuation
+B1: =='Start Here'!$H$5
+B2 (B2): =_xlfn.TEXTAFTER(CELL("filename"), "]")
+C8: ==1/13
+C12: ==LN(1-10%)
+C13: ==LN(1+15%)
+C17 (C17): =CLIP(_xlfn.FORECAST.LINEAR($AA$42,Config!$B$17:$C$17,Config!$B$16:$C$16),min_multiple,max_multiple)
+C18: ==_xlfn.XLOOKUP($C$16,$B$34:$B$42,$AA$34:$AA$42)
+C19: ==$C$17*$C$18
+E23: ==D$23+1
+F23: ==E$23+1
+G23: ==F$23+1
+C24: ==-price_financials_currency/reported_shares_in_effective_share
+D25: =='Income statement'!W$87
+E25: =='Income statement'!X$87
+F25: =='Income statement'!Y$87
+G25: =='Income statement'!Z$87
+G26: ==exit_price
+C27: ==SUM(C$24:C$26)
+D27: ==SUM(D$24:D$26)
+E27: ==SUM(E$24:E$26)
+F27: ==SUM(F$24:F$26)
+G27: ==SUM(G$24:G$26)
+C29: ==IRR($C$27:$G$27)
+C33 (C33:AB33): ='Income statement'!$C$6:$AB$6
+C34 (C34:V34): =_xlfn.XLOOKUP($C$33:$V$33,_xlfn.ANCHORARRAY('Share price history'!$D$6),_xlfn.ANCHORARRAY('Share price history'!$G$6))
+W34: ==price_financials_currency
+C35 (C35:AB35): ='Income statement'!$C$84:$AB$84
+D35: ==
+E35: ==
+F35: ==
+G35: ==
+H35: ==
+I35: ==
+J35: ==
+K35: ==
+L35: ==
+M35: ==
+N35: ==
+O35: ==
+P35: ==
+Q35: ==
+R35: ==
+S35: ==
+T35: ==
+U35: ==
+V35: ==
+W35: ==
+X35: ==
+Y35: ==
+Z35: ==
+AA35: ==
+AB35: ==
+C36 (C36:AB36): ='Income statement'!$C$86:$AB$86
+D36: ==
+E36: ==
+F36: ==
+G36: ==
+H36: ==
+I36: ==
+J36: ==
+K36: ==
+L36: ==
+M36: ==
+N36: ==
+O36: ==
+P36: ==
+Q36: ==
+R36: ==
+S36: ==
+T36: ==
+U36: ==
+V36: ==
+W36: ==
+X36: ==
+Y36: ==
+Z36: ==
+AA36: ==
+AB36: ==
+C37 (C37:AB37): =$C$34:$AB$34/'Income statement'!$C$89:$AB$89
+D37: ==
+E37: ==
+F37: ==
+G37: ==
+H37: ==
+I37: ==
+J37: ==
+K37: ==
+L37: ==
+M37: ==
+N37: ==
+O37: ==
+P37: ==
+Q37: ==
+R37: ==
+S37: ==
+T37: ==
+U37: ==
+V37: ==
+W37: ==
+X37: ==
+Y37: ==
+Z37: ==
+AA37: ==
+AB37: ==
+G38: ==G$34/_xlfn.AGGREGATE(1,2,C35:G35)
+H38: ==H$34/_xlfn.AGGREGATE(1,2,D$36:H$36)
+I38: ==I$34/_xlfn.AGGREGATE(1,2,E$36:I$36)
+J38: ==J$34/_xlfn.AGGREGATE(1,2,F$36:J$36)
+K38: ==K$34/_xlfn.AGGREGATE(1,2,G$36:K$36)
+L38: ==L$34/_xlfn.AGGREGATE(1,2,H$36:L$36)
+M38: ==M$34/_xlfn.AGGREGATE(1,2,I$36:M$36)
+N38: ==N$34/_xlfn.AGGREGATE(1,2,J$36:N$36)
+O38: ==O$34/_xlfn.AGGREGATE(1,2,K$36:O$36)
+P38: ==P$34/_xlfn.AGGREGATE(1,2,L$36:P$36)
+Q38: ==Q$34/_xlfn.AGGREGATE(1,2,M$36:Q$36)
+R38: ==R$34/_xlfn.AGGREGATE(1,2,N$36:R$36)
+S38: ==S$34/_xlfn.AGGREGATE(1,2,O$36:S$36)
+T38: ==T$34/_xlfn.AGGREGATE(1,2,P$36:T$36)
+U38: ==U$34/_xlfn.AGGREGATE(1,2,Q$36:U$36)
+V38: ==V$34/_xlfn.AGGREGATE(1,2,R$36:V$36)
+W38: ==W$34/$AA35
+G39: ==G$34/_xlfn.AGGREGATE(1,2,C36:G36)
+H39: ==H$34/_xlfn.AGGREGATE(1,2,D$36:H$36)
+I39: ==I$34/_xlfn.AGGREGATE(1,2,E$36:I$36)
+J39: ==J$34/_xlfn.AGGREGATE(1,2,F$36:J$36)
+K39: ==K$34/_xlfn.AGGREGATE(1,2,G$36:K$36)
+L39: ==L$34/_xlfn.AGGREGATE(1,2,H$36:L$36)
+M39: ==M$34/_xlfn.AGGREGATE(1,2,I$36:M$36)
+N39: ==N$34/_xlfn.AGGREGATE(1,2,J$36:N$36)
+O39: ==O$34/_xlfn.AGGREGATE(1,2,K$36:O$36)
+P39: ==P$34/_xlfn.AGGREGATE(1,2,L$36:P$36)
+Q39: ==Q$34/_xlfn.AGGREGATE(1,2,M$36:Q$36)
+R39: ==R$34/_xlfn.AGGREGATE(1,2,N$36:R$36)
+S39: ==S$34/_xlfn.AGGREGATE(1,2,O$36:S$36)
+T39: ==T$34/_xlfn.AGGREGATE(1,2,P$36:T$36)
+U39: ==U$34/_xlfn.AGGREGATE(1,2,Q$36:U$36)
+V39: ==V$34/_xlfn.AGGREGATE(1,2,R$36:V$36)
+W39: ==W$34/$AA36
+G40: ==1/G$39
+H40: ==1/H$39
+I40: ==1/I$39
+J40: ==1/J$39
+K40: ==1/K$39
+L40: ==1/L$39
+M40: ==1/M$39
+N40: ==1/N$39
+O40: ==1/O$39
+P40: ==1/P$39
+Q40: ==1/Q$39
+R40: ==1/R$39
+S40: ==1/S$39
+T40: ==1/T$39
+U40: ==1/U$39
+V40: ==1/V$39
+W40: ==1/W$39
+H41: ==_xlfn.AGGREGATE(1,2,'Income statement'!C$99:H$99)
+I41: ==_xlfn.AGGREGATE(1,2,'Income statement'!D$99:I$99)
+J41: ==_xlfn.AGGREGATE(1,2,'Income statement'!E$99:J$99)
+K41: ==_xlfn.AGGREGATE(1,2,'Income statement'!F$99:K$99)
+L41: ==_xlfn.AGGREGATE(1,2,'Income statement'!G$99:L$99)
+M41: ==_xlfn.AGGREGATE(1,2,'Income statement'!H$99:M$99)
+N41: ==_xlfn.AGGREGATE(1,2,'Income statement'!I$99:N$99)
+O41: ==_xlfn.AGGREGATE(1,2,'Income statement'!J$99:O$99)
+P41: ==_xlfn.AGGREGATE(1,2,'Income statement'!K$99:P$99)
+Q41: ==_xlfn.AGGREGATE(1,2,'Income statement'!L$99:Q$99)
+R41: ==_xlfn.AGGREGATE(1,2,'Income statement'!M$99:R$99)
+S41: ==_xlfn.AGGREGATE(1,2,'Income statement'!N$99:S$99)
+T41: ==_xlfn.AGGREGATE(1,2,'Income statement'!O$99:T$99)
+U41: ==_xlfn.AGGREGATE(1,2,'Income statement'!P$99:U$99)
+V41: ==_xlfn.AGGREGATE(1,2,'Income statement'!Q$99:V$99)
+W41: =='Income statement'!W$99
+X41: =='Income statement'!X$99
+Y41: =='Income statement'!Y$99
+Z41: =='Income statement'!Z$99
+AA41: =='Income statement'!AA$99
+AB41: =='Income statement'!AB$99
+H42: ==LOGEST('Income statement'!C$7:H$7)-1
+I42: ==LOGEST('Income statement'!D$7:I$7)-1
+J42: ==LOGEST('Income statement'!E$7:J$7)-1
+K42: ==LOGEST('Income statement'!F$7:K$7)-1
+L42: ==LOGEST('Income statement'!G$7:L$7)-1
+M42: ==LOGEST('Income statement'!H$7:M$7)-1
+N42: ==LOGEST('Income statement'!I$7:N$7)-1
+O42: ==LOGEST('Income statement'!J$7:O$7)-1
+P42: ==LOGEST('Income statement'!K$7:P$7)-1
+Q42: ==LOGEST('Income statement'!L$7:Q$7)-1
+R42: ==LOGEST('Income statement'!M$7:R$7)-1
+S42: ==LOGEST('Income statement'!N$7:S$7)-1
+T42: ==LOGEST('Income statement'!O$7:T$7)-1
+U42: ==LOGEST('Income statement'!P$7:U$7)-1
+V42: ==LOGEST('Income statement'!Q$7:V$7)-1
+W42: =='Income statement'!W$42
+X42: =='Income statement'!X$42
+Y42: =='Income statement'!Y$42
+Z42: =='Income statement'!Z$42
+AA42: =='Income statement'!AA$42
+AB42: =='Income statement'!AB$42
+G44: ==ERF((LN(G40)-LN($C8))*$D8)
+H44: ==ERF((LN(H40)-LN($C8))*$D8)
+I44: ==ERF((LN(I40)-LN($C8))*$D8)
+J44: ==ERF((LN(J40)-LN($C8))*$D8)
+K44: ==ERF((LN(K40)-LN($C8))*$D8)
+L44: ==ERF((LN(L40)-LN($C8))*$D8)
+M44: ==ERF((LN(M40)-LN($C8))*$D8)
+N44: ==ERF((LN(N40)-LN($C8))*$D8)
+O44: ==ERF((LN(O40)-LN($C8))*$D8)
+P44: ==ERF((LN(P40)-LN($C8))*$D8)
+Q44: ==ERF((LN(Q40)-LN($C8))*$D8)
+R44: ==ERF((LN(R40)-LN($C8))*$D8)
+S44: ==ERF((LN(S40)-LN($C8))*$D8)
+T44: ==ERF((LN(T40)-LN($C8))*$D8)
+U44: ==ERF((LN(U40)-LN($C8))*$D8)
+V44: ==ERF((LN(V40)-LN($C8))*$D8)
+W44: ==ERF((LN($W40)-LN($C8))*$D8)
+D45: ==ERF((LN(D41)-LN($C10))*$D10)
+E45: ==ERF((LN(E41)-LN($C10))*$D10)
+F45: ==ERF((LN(F41)-LN($C10))*$D10)
+G45: ==ERF((LN(G41)-LN($C10))*$D10)
+H45: ==ERF((LN(H41)-LN($C10))*$D10)
+I45: ==ERF((LN(I41)-LN($C10))*$D10)
+J45: ==ERF((LN(J41)-LN($C10))*$D10)
+K45: ==ERF((LN(K41)-LN($C10))*$D10)
+L45: ==ERF((LN(L41)-LN($C10))*$D10)
+M45: ==ERF((LN(M41)-LN($C10))*$D10)
+N45: ==ERF((LN(N41)-LN($C10))*$D10)
+O45: ==ERF((LN(O41)-LN($C10))*$D10)
+P45: ==ERF((LN(P41)-LN($C10))*$D10)
+Q45: ==ERF((LN(Q41)-LN($C10))*$D10)
+R45: ==ERF((LN(R41)-LN($C10))*$D10)
+S45: ==ERF((LN(S41)-LN($C10))*$D10)
+T45: ==ERF((LN(T41)-LN($C10))*$D10)
+U45: ==ERF((LN(U41)-LN($C10))*$D10)
+V45: ==ERF((LN(V41)-LN($C10))*$D10)
+W45: ==ERF((LN($W41)-LN($C9))*$D9)
+D46: ==ERF((D42-$C10)*$D10)
+E46: ==ERF((E42-$C10)*$D10)
+F46: ==ERF((F42-$C10)*$D10)
+G46: ==ERF((G42-$C10)*$D10)
+H46: ==ERF((H42-$C10)*$D10)
+I46: ==ERF((I42-$C10)*$D10)
+J46: ==ERF((J42-$C10)*$D10)
+K46: ==ERF((K42-$C10)*$D10)
+L46: ==ERF((L42-$C10)*$D10)
+M46: ==ERF((M42-$C10)*$D10)
+N46: ==ERF((N42-$C10)*$D10)
+O46: ==ERF((O42-$C10)*$D10)
+P46: ==ERF((P42-$C10)*$D10)
+Q46: ==ERF((Q42-$C10)*$D10)
+R46: ==ERF((R42-$C10)*$D10)
+S46: ==ERF((S42-$C10)*$D10)
+T46: ==ERF((T42-$C10)*$D10)
+U46: ==ERF((U42-$C10)*$D10)
+V46: ==ERF((V42-$C10)*$D10)
+W46: ==ERF(($X$42-$C$10)*$D$10)
+G47: ==SUMPRODUCT(G$44:G$46,$E$8:$E$10)
+H47: ==SUMPRODUCT(H$44:H$46,$E$8:$E$10)
+I47: ==SUMPRODUCT(I$44:I$46,$E$8:$E$10)
+J47: ==SUMPRODUCT(J$44:J$46,$E$8:$E$10)
+K47: ==SUMPRODUCT(K$44:K$46,$E$8:$E$10)
+L47: ==SUMPRODUCT(L$44:L$46,$E$8:$E$10)
+M47: ==SUMPRODUCT(M$44:M$46,$E$8:$E$10)
+N47: ==SUMPRODUCT(N$44:N$46,$E$8:$E$10)
+O47: ==SUMPRODUCT(O$44:O$46,$E$8:$E$10)
+P47: ==SUMPRODUCT(P$44:P$46,$E$8:$E$10)
+Q47: ==SUMPRODUCT(Q$44:Q$46,$E$8:$E$10)
+R47: ==SUMPRODUCT(R$44:R$46,$E$8:$E$10)
+S47: ==SUMPRODUCT(S$44:S$46,$E$8:$E$10)
+T47: ==SUMPRODUCT(T$44:T$46,$E$8:$E$10)
+U47: ==SUMPRODUCT(U$44:U$46,$E$8:$E$10)
+V47: ==SUMPRODUCT(V$44:V$46,$E$8:$E$10)
+W47: ==SUMPRODUCT(W$44:W$46,$E$8:$E$10)
+
+[Defined Names]
+as_of_date: Start Here!$B$5
+available_years: Config!$E$30
+change_monitor_for_solver: Forecast mechanics!
+daily_returns_id: Start Here!$E$11
+empty_buffer: Config!$E$34
+exit_price: Valuation!$C$19
+ff_id_override: Start Here!$D$10
+fin_axis_max: For chart!$D$16
+fin_axis_min: For chart!$D$15
+financials_currency: Start Here!$C$14
+fsym_id: Start Here!
+id_for_financials: Start Here!$E$10
+infinity: Config!$B$22
+investment_horizon: Config!$B$23
+max_ebit: Config!$C$9
+max_growth: Config!$C$6
+max_multiple: Config!$C$8
+max_payout: Config!$C$10
+max_tax: Config!$C$11
+max_terminal_growth: Config!$C$7
+min_ebit: Config!$B$9
+min_growth: Config!$B$6
+min_multiple: Config!$B$8
+min_payout: Config!$B$10
+min_tax: Config!$B$11
+min_terminal_growth: Config!$B$7
+n_years: Config!$E$31
+name: Start Here!$E$8
+name_override: Start Here!$D$8
+name_part: Start Here!$B$4
+p: Config!$B$24
+price_axis_max: For chart!$C$16
+price_axis_min: For chart!$C$15
+price_financials_currency: Start Here!$C$19
+rate_spread: Config!$B$21
+reported_shares_in_effective_share: Start Here!$C$24
+share_currency: Start Here!$C$13
+solver_alpha: Forecast mechanics!
+solver_b0: Forecast mechanics!
+solver_beta: Forecast mechanics!
+solver_l0: Forecast mechanics!
+solver_phi: Forecast mechanics!
+solver_result: Forecast mechanics!
+solver_result_status: Forecast mechanics!
+solver_sse: Forecast mechanics!

@@ -1,0 +1,5 @@
+mypy
+openpyxl
+pandas
+pydantic
+requests
