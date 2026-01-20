@@ -119,11 +119,11 @@ def test_generate_forecast_balance_sheet_identity() -> None:
     forecast_model = generate_forecast(history, assumptions)
 
     assert len(forecast_model.forecast) == 2
-    for item in forecast_model.forecast:
-        assets = item.balance.get("total_assets")
-        liabilities = item.balance.get("total_liabilities")
-        equity = item.balance.get("total_equity")
-        assert assets == liabilities + equity
+    assert all(
+        item.balance.get("total_assets")
+        == item.balance.get("total_liabilities") + item.balance.get("total_equity")
+        for item in forecast_model.forecast
+    )
 
 
 def test_forecast_does_not_mutate_history() -> None:

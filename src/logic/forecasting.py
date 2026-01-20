@@ -68,11 +68,15 @@ def _build_balance_growth_rates(
         "minority_interest",
         "total_equity",
     )
-    rates: dict[str, float] = {}
-    for key in balance_keys:
-        rate = _average_growth(_series(history, "balance", key)) or 0.0
-        rates[key] = _override(assumptions.growth_rates, key, rate, 0.0)
-    return rates
+    return {
+        key: _override(
+            assumptions.growth_rates,
+            key,
+            _average_growth(_series(history, "balance", key)) or 0.0,
+            0.0,
+        )
+        for key in balance_keys
+    }
 
 
 def _build_ratios(history: list[LineItems], assumptions: Assumptions) -> dict[str, float]:
