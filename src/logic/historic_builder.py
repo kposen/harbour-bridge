@@ -6,7 +6,12 @@ from datetime import date, datetime
 from math import isclose
 from typing import Any, Mapping
 
+import logging
+
 from src.domain.schemas import FinancialModel, LineItems
+
+
+logger = logging.getLogger(__name__)
 
 # Provider field mapping for EODHD payloads (external -> internal).
 EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
@@ -76,6 +81,7 @@ def build_historic_model(
     """
     # Extract records from multiple supported shapes.
     records = _extract_records(raw_data)
+    logger.debug("Extracted %d records", len(records))
     for record in records:
         # Ensure every record has a date to anchor its period.
         if record.get("date") is None:
@@ -85,6 +91,7 @@ def build_historic_model(
         _build_line_items(record, field_map)
         for record in sorted(records, key=lambda item: item["date"])
     ]
+    logger.debug("Built %d LineItems entries", len(history))
     return FinancialModel(history=history, forecast=[])
 
 
@@ -99,6 +106,7 @@ def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
     """
     # Shares are optional and may come from a separate branch.
     shares_by_date = _extract_outstanding_shares(raw_data)
+    logger.debug("Parsed %d share-date entries", len(shares_by_date))
     if "records" in raw_data and isinstance(raw_data["records"], list):
         # Already record-like: just normalize dates.
         records = [
@@ -149,7 +157,7 @@ def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]
 
     # Merge three statements by date into a unified record.
     dates = sorted(set(income) | set(balance) | set(cashflow))
-    return [
+    records = [
         {
             "date": period,
             **income.get(period, {}),
@@ -158,6 +166,14 @@ def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]
         }
         for period in dates
     ]
+    logger.debug(
+        "EODHD yearly records: income=%d balance=%d cashflow=%d merged=%d",
+        len(income),
+        len(balance),
+        len(cashflow),
+        len(records),
+    )
+    return records
 
 
 def _extract_outstanding_shares(raw_data: Mapping[str, Any]) -> dict[date, float]:
@@ -215,6 +231,7 @@ def _attach_shares(
     """
     if not shares_by_date:
         return records
+    attached = 0
     for record in records:
         period = record.get("date")
         if not isinstance(period, date):
@@ -223,6 +240,8 @@ def _attach_shares(
         shares = _lookup_shares(shares_by_date, period)
         if shares is not None and "dilutedSharesOutstanding" not in record:
             record["dilutedSharesOutstanding"] = shares
+            attached += 1
+    logger.debug("Attached shares to %d records", attached)
     return records
 
 

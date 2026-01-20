@@ -2,4 +2,5 @@ mypy
 openpyxl
 pandas
 pydantic
+pytest
 requests

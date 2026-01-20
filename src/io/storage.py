@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
 from src.domain.schemas import FinancialModel
+
+
+logger = logging.getLogger(__name__)
 
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -26,6 +30,7 @@ def save_share_data(ticker: str, data: FinancialModel) -> None:
     # Use pydantic to produce JSON-friendly data.
     payload = data.model_dump(mode="json")
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved share data to %s", path)
 
 
 def load_share_data(ticker: str) -> Optional[FinancialModel]:
@@ -40,9 +45,11 @@ def load_share_data(ticker: str) -> Optional[FinancialModel]:
     path = _share_path(ticker)
     # No data on disk: treat as a cache miss.
     if not path.exists():
+        logger.debug("No share data found for %s", ticker)
         return None
     # Validate payload to keep data consistent.
     payload = json.loads(path.read_text(encoding="utf-8"))
+    logger.debug("Loaded share data from %s", path)
     return FinancialModel.model_validate(payload)
 
 

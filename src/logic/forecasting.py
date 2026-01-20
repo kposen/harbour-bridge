@@ -8,6 +8,10 @@ from typing import Iterable
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 AVERAGE_WINDOW = 4
 DEFAULT_FORECAST_YEARS = 6
 
@@ -43,6 +47,7 @@ def generate_forecast(history: FinancialModel, assumptions: Assumptions) -> Fina
 
     # Use a functional reduction to build successive forecast periods.
     forecast_items = reduce(step, range(forecast_years), [historic_items[-1]])[1:]
+    logger.debug("Generated %d forecast periods", len(forecast_items))
     return FinancialModel(history=historic_items, forecast=forecast_items)
 
 
@@ -186,6 +191,7 @@ def _forecast_next_year(
     """
     # Advance the period by one year, keeping the same month/day.
     period = _add_year(prior.period)
+    logger.debug("Forecasting period %s", period.isoformat())
     # Revenue and shares are grown directly.
     revenue = _apply_growth(prior.income.get("revenue"), growth["revenue"])
 

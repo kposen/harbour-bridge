@@ -12,6 +12,7 @@
 - `pip install -r requirements.txt` installs pinned dependencies once a requirements file exists.
 - `pip install pandas requests pydantic mypy openpyxl` installs the current runtime dependencies and type checker.
 - `python -m src.app` runs the main module when it is introduced.
+- Run pipeline: `python main.py` (requires `EODHD_API_KEY`).
 
 ## Coding Style & Naming Conventions
 - Target Python 3.12+ and use strict type hinting throughout the codebase.
