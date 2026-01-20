@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from typing import Any
 
 import requests
@@ -24,6 +25,10 @@ def get_tickers_needing_update() -> list[str]:
     Returns:
         list[str]: Ticker symbols requiring updates.
     """
+    # Allow explicit CLI args; otherwise fall back to the placeholder.
+    cli_tickers = [arg.strip() for arg in sys.argv[1:] if arg.strip()]
+    if cli_tickers:
+        return cli_tickers
     # Placeholder: wire this to a watchlist or datastore later.
     return []
 
