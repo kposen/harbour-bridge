@@ -6,15 +6,68 @@ from typing import Any, Mapping
 
 from src.domain.schemas import FinancialModel, LineItems
 
+EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    "revenue": ("totalRevenue",),
+    "gross_profit": ("grossProfit",),
+    "gross_costs": ("costOfRevenue", "costOfGoodsAndServicesSold"),
+    "depreciation": ("depreciation",),
+    "amortization": ("amortization",),
+    "depreciation_and_amortization": ("depreciationAndAmortization",),
+    "operating_income": ("operatingIncome",),
+    "interest_income": ("interestIncome",),
+    "interest_expense": ("interestExpense",),
+    "pre_tax_income": ("incomeBeforeTax",),
+    "income_tax": ("incomeTax", "incomeTaxExpense"),
+    "affiliates_income": ("equityEarnings",),
+    "net_income": ("netIncome",),
+    "minorities_expense": ("minorityInterest",),
+    "preferred_dividends": ("preferredDividends",),
+    "shares_diluted": ("dilutedSharesOutstanding", "weightedAverageShsOutDil"),
+    "cash_short_term_investments": ("cashAndShortTermInvestments",),
+    "inventory": ("inventory",),
+    "receivables": ("netReceivables",),
+    "current_assets": ("totalCurrentAssets",),
+    "ppe_net": ("propertyPlantEquipmentNet",),
+    "software": ("software",),
+    "intangibles": ("intangibleAssets",),
+    "long_term_investments": ("longTermInvestments",),
+    "total_assets": ("totalAssets",),
+    "current_liabilities": ("totalCurrentLiabilities",),
+    "accounts_payable": ("accountsPayable",),
+    "total_liabilities": ("totalLiab",),
+    "debt_short_term": ("shortTermDebt",),
+    "debt_long_term": ("longTermDebt",),
+    "preferred_stock": ("preferredStock",),
+    "common_equity": ("totalStockholderEquity", "commonStockEquity"),
+    "minority_interest": ("minorityInterest",),
+    "net_income_cfs": ("netIncome",),
+    "working_capital_change": ("changeInWorkingCapital",),
+    "cash_from_operations": ("totalCashFromOperatingActivities",),
+    "capex_fixed": ("capitalExpenditures",),
+    "capex_other": ("otherCapitalExpenditures",),
+    "sale_ppe": ("saleOfPPE",),
+    "cash_from_investing": ("totalCashflowsFromInvestingActivities",),
+    "dividends_paid": ("dividendsPaid",),
+    "share_purchases": ("stockRepurchase",),
+    "share_sales": ("issuanceOfStock",),
+    "debt_cash_flow": ("cashFromDebt",),
+    "cash_from_financing": ("totalCashFromFinancingActivities",),
+}
 
-def build_historic_model(raw_data: dict[str, Any]) -> FinancialModel:
+FACTSET_FIELD_MAP: dict[str, tuple[str, ...]] = {}
+
+
+def build_historic_model(
+    raw_data: dict[str, Any],
+    field_map: Mapping[str, tuple[str, ...]] = EODHD_FIELD_MAP,
+) -> FinancialModel:
     records = _extract_records(raw_data)
     for record in records:
         if record.get("date") is None:
             raise ValueError("record date is missing or invalid")
     history: list[LineItems] = []
     for record in sorted(records, key=lambda item: item["date"]):
-        line_items = _build_line_items(record)
+        line_items = _build_line_items(record, field_map)
         history.append(line_items)
     return FinancialModel(history=history, forecast=[])
 
@@ -149,41 +202,42 @@ def _eodhd_statement_yearly(
     return parsed
 
 
-def _build_line_items(record: Mapping[str, Any]) -> LineItems:
+def _build_line_items(
+    record: Mapping[str, Any],
+    field_map: Mapping[str, tuple[str, ...]],
+) -> LineItems:
     period = _parse_date(record.get("date"))
     if period is None:
         raise ValueError("record date is missing or invalid")
 
-    income = _build_income_items(record)
-    balance = _build_balance_items(record)
-    cash_flow = _build_cash_flow_items(record)
+    income = _build_income_items(record, field_map)
+    balance = _build_balance_items(record, field_map)
+    cash_flow = _build_cash_flow_items(record, field_map)
 
     _assert_accounting_identity(balance)
 
     return LineItems(period=period, income=income, balance=balance, cash_flow=cash_flow)
 
 
-def _build_income_items(record: Mapping[str, Any]) -> dict[str, float | None]:
-    revenue = _value(record, "ff_sales", "totalRevenue")
-    gross_profit = _value(record, "ff_gross_inc", "grossProfit")
-    gross_costs_reported = _negative_value(
-        record,
-        "gross_costs",
-        "costOfRevenue",
-        "costOfGoodsAndServicesSold",
-    )
+def _build_income_items(
+    record: Mapping[str, Any],
+    field_map: Mapping[str, tuple[str, ...]],
+) -> dict[str, float | None]:
+    revenue = _value(record, *field_map["revenue"])
+    gross_profit = _value(record, *field_map["gross_profit"])
+    gross_costs_reported = _negative_value(record, *field_map["gross_costs"])
     gross_costs = _checked_value(
         "gross_costs",
         _calculate_gross_costs(revenue, gross_profit),
         gross_costs_reported,
     )
 
-    depreciation = _negative_value(record, "ff_dep_exp", "depreciation")
-    amortization = _negative_value(record, "amortization", "ff_amort_exp")
-    dep_amort = _negative_value(record, "ff_dep_amort_exp", "depreciationAndAmortization")
+    depreciation = _negative_value(record, *field_map["depreciation"])
+    amortization = _negative_value(record, *field_map["amortization"])
+    dep_amort = _negative_value(record, *field_map["depreciation_and_amortization"])
     depreciation, amortization = _split_dep_amort(depreciation, amortization, dep_amort)
 
-    operating_income_reported = _value(record, "ff_ebit_oper", "operatingIncome")
+    operating_income_reported = _value(record, *field_map["operating_income"])
     other_operating_expenses = _calculate_other_operating_expenses(
         gross_profit,
         depreciation,
@@ -203,14 +257,14 @@ def _build_income_items(record: Mapping[str, Any]) -> dict[str, float | None]:
         ebitda_reported,
     )
 
-    interest_income = _value(record, "ff_int_inc_non_oper", "interestIncome")
-    interest_expense = _negative_value(record, "ff_int_exp_net", "interestExpense")
+    interest_income = _value(record, *field_map["interest_income"])
+    interest_expense = _negative_value(record, *field_map["interest_expense"])
     other_non_operating = _calculate_other_non_operating_income(
         operating_income,
         interest_income,
         interest_expense,
         _value(record, "other_non_operating_income"),
-        _value(record, "ff_ptx_inc", "incomeBeforeTax"),
+        _value(record, *field_map["pre_tax_income"]),
     )
 
     pre_tax_income = _checked_value(
@@ -221,26 +275,24 @@ def _build_income_items(record: Mapping[str, Any]) -> dict[str, float | None]:
             interest_expense,
             other_non_operating,
         ),
-        _value(record, "ff_ptx_inc", "incomeBeforeTax"),
+        _value(record, *field_map["pre_tax_income"]),
     )
 
-    income_tax = _negative_value(record, "ff_inc_tax", "incomeTax")
-    affiliates_income = _value(record, "ff_eq_aff_inc", "equityEarnings")
+    income_tax = _negative_value(record, *field_map["income_tax"])
+    affiliates_income = _value(record, *field_map["affiliates_income"])
     net_income = _checked_value(
         "net_income",
         _calculate_net_income(pre_tax_income, income_tax, affiliates_income),
-        _value(record, "ff_net_inc_basic", "netIncome"),
+        _value(record, *field_map["net_income"]),
     )
 
-    minorities_expense = _negative_value(record, "ff_min_int_exp", "minorityInterest")
-    preferred_dividends = _negative_value(record, "ff_div_pfd", "preferredDividends")
+    minorities_expense = _negative_value(record, *field_map["minorities_expense"])
+    preferred_dividends = _negative_value(record, *field_map["preferred_dividends"])
     net_income_common = _calculate_net_income_common(net_income, minorities_expense, preferred_dividends)
 
     shares_diluted = _value(
         record,
-        "ff_com_shs_out_eps_dil",
-        "dilutedSharesOutstanding",
-        "weightedAverageShsOutDil",
+        *field_map["shares_diluted"],
     )
 
     return {
@@ -266,11 +318,14 @@ def _build_income_items(record: Mapping[str, Any]) -> dict[str, float | None]:
     }
 
 
-def _build_balance_items(record: Mapping[str, Any]) -> dict[str, float | None]:
-    cash_short_term = _value(record, "ff_cash_st", "cashAndShortTermInvestments")
-    inventory = _value(record, "ff_inven", "inventory")
-    receivables = _value(record, "ff_receiv_st", "netReceivables")
-    current_assets = _value(record, "ff_assets_curr", "totalCurrentAssets")
+def _build_balance_items(
+    record: Mapping[str, Any],
+    field_map: Mapping[str, tuple[str, ...]],
+) -> dict[str, float | None]:
+    cash_short_term = _value(record, *field_map["cash_short_term_investments"])
+    inventory = _value(record, *field_map["inventory"])
+    receivables = _value(record, *field_map["receivables"])
+    current_assets = _value(record, *field_map["current_assets"])
     other_current_assets = _calculate_other_current_assets(
         current_assets,
         cash_short_term,
@@ -278,12 +333,12 @@ def _build_balance_items(record: Mapping[str, Any]) -> dict[str, float | None]:
         receivables,
     )
 
-    ppe_net = _value(record, "ff_ppe_net", "propertyPlantEquipmentNet")
-    software = _value(record, "ff_comp_soft", "software")
-    intangibles = _value(record, "ff_intang", "intangibleAssets")
-    investments_lt = _value(record, "ff_invest_lt", "longTermInvestments")
+    ppe_net = _value(record, *field_map["ppe_net"])
+    software = _value(record, *field_map["software"])
+    intangibles = _value(record, *field_map["intangibles"])
+    investments_lt = _value(record, *field_map["long_term_investments"])
 
-    total_assets = _value(record, "ff_assets", "totalAssets")
+    total_assets = _value(record, *field_map["total_assets"])
     total_non_current_assets = _calculate_total_non_current_assets(total_assets, current_assets)
     other_non_current_assets = _calculate_other_non_current_assets(
         total_non_current_assets,
@@ -293,15 +348,15 @@ def _build_balance_items(record: Mapping[str, Any]) -> dict[str, float | None]:
         investments_lt,
     )
 
-    current_liabilities = _value(record, "ff_liabs_curr", "totalCurrentLiabilities")
-    accounts_payable = _value(record, "ff_pay_acct", "accountsPayable")
-    total_liabilities = _value(record, "ff_liabs", "totalLiab")
-    debt_st = _value(record, "ff_debt_st_tot", "shortTermDebt")
-    debt_lt = _value(record, "ff_debt_lt_tot", "longTermDebt")
+    current_liabilities = _value(record, *field_map["current_liabilities"])
+    accounts_payable = _value(record, *field_map["accounts_payable"])
+    total_liabilities = _value(record, *field_map["total_liabilities"])
+    debt_st = _value(record, *field_map["debt_short_term"])
+    debt_lt = _value(record, *field_map["debt_long_term"])
 
-    preferred_stock = _value(record, "ff_pfd_stk", "preferredStock")
-    common_equity = _value(record, "ff_com_eq", "totalStockholderEquity", "commonStockEquity")
-    minority_equity = _value(record, "ff_min_int_accum", "minorityInterest")
+    preferred_stock = _value(record, *field_map["preferred_stock"])
+    common_equity = _value(record, *field_map["common_equity"])
+    minority_equity = _value(record, *field_map["minority_interest"])
     total_equity = _calculate_total_equity(common_equity, preferred_stock, minority_equity)
 
     return {
@@ -329,15 +384,18 @@ def _build_balance_items(record: Mapping[str, Any]) -> dict[str, float | None]:
     }
 
 
-def _build_cash_flow_items(record: Mapping[str, Any]) -> dict[str, float | None]:
-    net_income_cfs = _value(record, "ff_net_inc_cf", "netIncome")
-    depreciation = _value(record, "ff_dep_exp", "depreciation")
-    amortization = _value(record, "amortization", "ff_amort_exp")
-    dep_amort = _value(record, "ff_dep_amort_exp", "depreciationAndAmortization")
+def _build_cash_flow_items(
+    record: Mapping[str, Any],
+    field_map: Mapping[str, tuple[str, ...]],
+) -> dict[str, float | None]:
+    net_income_cfs = _value(record, *field_map["net_income_cfs"])
+    depreciation = _value(record, *field_map["depreciation"])
+    amortization = _value(record, *field_map["amortization"])
+    dep_amort = _value(record, *field_map["depreciation_and_amortization"])
     depreciation, amortization = _split_dep_amort(depreciation, amortization, dep_amort)
 
-    working_cap_change = _value(record, "ff_wkcap_chg", "changeInWorkingCapital")
-    cfo_reported = _value(record, "ff_funds_oper_gross", "totalCashFromOperatingActivities")
+    working_cap_change = _value(record, *field_map["working_capital_change"])
+    cfo_reported = _value(record, *field_map["cash_from_operations"])
     other_cfo = _calculate_other_cfo(
         cfo_reported,
         net_income_cfs,
@@ -357,10 +415,10 @@ def _build_cash_flow_items(record: Mapping[str, Any]) -> dict[str, float | None]
         cfo_reported,
     )
 
-    capex_fixed = _negative_value(record, "ff_capex_fix", "capitalExpenditures")
-    capex_other = _negative_value(record, "ff_capex_oth", "otherCapitalExpenditures")
-    sale_ppe = _value(record, "ff_sale_ppe_cf", "saleOfPPE")
-    cfi_reported = _value(record, "ff_invest_cf", "totalCashflowsFromInvestingActivities")
+    capex_fixed = _negative_value(record, *field_map["capex_fixed"])
+    capex_other = _negative_value(record, *field_map["capex_other"])
+    sale_ppe = _value(record, *field_map["sale_ppe"])
+    cfi_reported = _value(record, *field_map["cash_from_investing"])
     other_cfi = _calculate_other_cfi(cfi_reported, capex_fixed, capex_other, sale_ppe)
     cash_from_investing = _checked_value(
         "cash_from_investing",
@@ -368,11 +426,11 @@ def _build_cash_flow_items(record: Mapping[str, Any]) -> dict[str, float | None]
         cfi_reported,
     )
 
-    dividends_paid = _negative_value(record, "ff_div_com_cf", "dividendsPaid")
-    share_purchases = _negative_value(record, "ff_stk_purch_cf", "stockRepurchase")
-    share_sales = _value(record, "ff_stk_sale_cf", "issuanceOfStock")
-    debt_cf = _value(record, "ff_debt_cf", "cashFromDebt")
-    cff_reported = _value(record, "ff_fin_cf", "totalCashFromFinancingActivities")
+    dividends_paid = _negative_value(record, *field_map["dividends_paid"])
+    share_purchases = _negative_value(record, *field_map["share_purchases"])
+    share_sales = _value(record, *field_map["share_sales"])
+    debt_cf = _value(record, *field_map["debt_cash_flow"])
+    cff_reported = _value(record, *field_map["cash_from_financing"])
     other_cff = _calculate_other_cff(
         cff_reported,
         dividends_paid,
