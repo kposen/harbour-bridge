@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Tests for core pure logic: history parsing and forecasting."""
+
 from datetime import date
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
@@ -8,6 +10,15 @@ from src.logic.historic_builder import build_historic_model
 
 
 def test_build_historic_model_minimal_payload() -> None:
+    """Ensure minimal raw payloads parse into expected LineItems.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate parsing behavior.
+    """
+    # Provide enough fields to satisfy accounting identity checks.
     raw_data = {
         "records": [
             {
@@ -29,6 +40,7 @@ def test_build_historic_model_minimal_payload() -> None:
 
     model = build_historic_model(raw_data)
 
+    # Validate a handful of computed and mapped values.
     assert len(model.history) == 1
     item = model.history[0]
     assert item.period == date(2023, 12, 31)
@@ -41,6 +53,15 @@ def test_build_historic_model_minimal_payload() -> None:
 
 
 def test_generate_forecast_balance_sheet_identity() -> None:
+    """Forecast should produce balanced assets = liabilities + equity.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate balance sheet identity.
+    """
+    # Build a small historical model with complete statements.
     history = FinancialModel(
         history=[
             LineItems(
@@ -118,6 +139,7 @@ def test_generate_forecast_balance_sheet_identity() -> None:
     assumptions = Assumptions(growth_rates={"forecast_years": 2}, margins={})
     forecast_model = generate_forecast(history, assumptions)
 
+    # Each forecast period should satisfy the accounting identity.
     assert len(forecast_model.forecast) == 2
     assert all(
         item.balance.get("total_assets")
@@ -127,6 +149,15 @@ def test_generate_forecast_balance_sheet_identity() -> None:
 
 
 def test_forecast_does_not_mutate_history() -> None:
+    """Forecasting should not mutate the original history object.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate immutability.
+    """
+    # Keep the history minimal; we only check immutability.
     history = FinancialModel(
         history=[
             LineItems(
@@ -140,6 +171,7 @@ def test_forecast_does_not_mutate_history() -> None:
     )
     before = history.model_dump()
 
+    # Run forecasting and ensure the original model is unchanged.
     assumptions = Assumptions(growth_rates={"forecast_years": 1}, margins={})
     generate_forecast(history, assumptions)
 

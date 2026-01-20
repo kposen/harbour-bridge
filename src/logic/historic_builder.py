@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+"""Build normalized financial statements from raw provider payloads."""
+
 from datetime import date, datetime
 from math import isclose
 from typing import Any, Mapping
 
 from src.domain.schemas import FinancialModel, LineItems
 
+# Provider field mapping for EODHD payloads (external -> internal).
 EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "revenue": ("totalRevenue",),
     "gross_profit": ("grossProfit",),
@@ -54,6 +57,7 @@ EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "cash_from_financing": ("totalCashFromFinancingActivities",),
 }
 
+# Placeholder mapping for a future FactSet provider.
 FACTSET_FIELD_MAP: dict[str, tuple[str, ...]] = {}
 
 
@@ -61,10 +65,22 @@ def build_historic_model(
     raw_data: dict[str, Any],
     field_map: Mapping[str, tuple[str, ...]] = EODHD_FIELD_MAP,
 ) -> FinancialModel:
+    """Parse raw data into a FinancialModel of historical LineItems.
+
+    Args:
+        raw_data (dict[str, Any]): Raw provider payload.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        FinancialModel: Parsed historical model with empty forecast.
+    """
+    # Extract records from multiple supported shapes.
     records = _extract_records(raw_data)
     for record in records:
+        # Ensure every record has a date to anchor its period.
         if record.get("date") is None:
             raise ValueError("record date is missing or invalid")
+    # Build line items in chronological order.
     history = [
         _build_line_items(record, field_map)
         for record in sorted(records, key=lambda item: item["date"])
@@ -73,20 +89,32 @@ def build_historic_model(
 
 
 def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Normalize known raw payload shapes into a list of records.
+
+    Args:
+        raw_data (Mapping[str, Any]): Raw provider payload.
+
+    Returns:
+        list[dict[str, Any]]: Normalized records with parsed dates.
+    """
+    # Shares are optional and may come from a separate branch.
     shares_by_date = _extract_outstanding_shares(raw_data)
     if "records" in raw_data and isinstance(raw_data["records"], list):
+        # Already record-like: just normalize dates.
         records = [
             {**dict(item), "date": _parse_date(dict(item).get("date"))}
             for item in raw_data["records"]
         ]
         return _attach_shares(records, shares_by_date)
     if "raw_financials" in raw_data and isinstance(raw_data["raw_financials"], list):
+        # Alternative list shape.
         records = [
             {**dict(item), "date": _parse_date(dict(item).get("date"))}
             for item in raw_data["raw_financials"]
         ]
         return _attach_shares(records, shares_by_date)
     if "rows" in raw_data and isinstance(raw_data["rows"], list):
+        # Another possible list-based payload.
         records = [
             {**dict(item), "date": _parse_date(dict(item).get("date"))}
             for item in raw_data["rows"]
@@ -94,10 +122,12 @@ def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
         return _attach_shares(records, shares_by_date)
 
     if "Financials" in raw_data:
+        # EODHD-style payload (capitalized key).
         records = _extract_eodhd_yearly(raw_data["Financials"])
         return _attach_shares(records, shares_by_date)
 
     if "financials" in raw_data:
+        # EODHD-style payload (lowercase key).
         records = _extract_eodhd_yearly(raw_data["financials"])
         return _attach_shares(records, shares_by_date)
 
@@ -105,10 +135,19 @@ def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Extract yearly statement data from an EODHD financials block.
+
+    Args:
+        financials (Mapping[str, Any]): EODHD financials payload.
+
+    Returns:
+        list[dict[str, Any]]: Yearly records merged across statements.
+    """
     income = _eodhd_statement_yearly(financials, "Income_Statement")
     balance = _eodhd_statement_yearly(financials, "Balance_Sheet")
     cashflow = _eodhd_statement_yearly(financials, "Cash_Flow")
 
+    # Merge three statements by date into a unified record.
     dates = sorted(set(income) | set(balance) | set(cashflow))
     return [
         {
@@ -122,6 +161,14 @@ def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]
 
 
 def _extract_outstanding_shares(raw_data: Mapping[str, Any]) -> dict[date, float]:
+    """Parse annual outstanding share counts keyed by date.
+
+    Args:
+        raw_data (Mapping[str, Any]): Raw provider payload.
+
+    Returns:
+        dict[date, float]: Shares keyed by date.
+    """
     shares_block = raw_data.get("outstandingShares")
     if not isinstance(shares_block, Mapping):
         return {}
@@ -137,9 +184,11 @@ def _extract_outstanding_shares(raw_data: Mapping[str, Any]) -> dict[date, float
     for entry in entries:
         if not isinstance(entry, Mapping):
             continue
+        # Prefer formatted date; fall back to year-only.
         period = _parse_date(entry.get("dateFormatted")) or _parse_year(entry.get("date"))
         if period is None:
             continue
+        # Prefer absolute shares; fall back to millions.
         shares = _to_float(entry.get("shares"))
         if shares is None:
             shares_mln = _to_float(entry.get("sharesMln"))
@@ -155,12 +204,22 @@ def _attach_shares(
     records: list[dict[str, Any]],
     shares_by_date: Mapping[date, float],
 ) -> list[dict[str, Any]]:
+    """Attach outstanding shares to each record when available.
+
+    Args:
+        records (list[dict[str, Any]]): Normalized records.
+        shares_by_date (Mapping[date, float]): Shares by date.
+
+    Returns:
+        list[dict[str, Any]]: Records with shares merged in.
+    """
     if not shares_by_date:
         return records
     for record in records:
         period = record.get("date")
         if not isinstance(period, date):
             continue
+        # Match by exact date, then by same-year fallback.
         shares = _lookup_shares(shares_by_date, period)
         if shares is not None and "dilutedSharesOutstanding" not in record:
             record["dilutedSharesOutstanding"] = shares
@@ -168,15 +227,33 @@ def _attach_shares(
 
 
 def _lookup_shares(shares_by_date: Mapping[date, float], period: date) -> float | None:
+    """Find shares for a period, matching exact date or nearest same year.
+
+    Args:
+        shares_by_date (Mapping[date, float]): Shares keyed by date.
+        period (date): Period to match.
+
+    Returns:
+        float | None: Shares for the period, if available.
+    """
     if period in shares_by_date:
         return shares_by_date[period]
     matches = [(match_date, shares) for match_date, shares in shares_by_date.items() if match_date.year == period.year]
     if not matches:
         return None
+    # Use the latest date within the same year.
     return max(matches, key=lambda item: item[0])[1]
 
 
 def _parse_year(value: Any) -> date | None:
+    """Parse a YYYY string into a year-end date.
+
+    Args:
+        value (Any): Value that may encode a year.
+
+    Returns:
+        date | None: Year-end date if parsed.
+    """
     if isinstance(value, str) and value.isdigit() and len(value) == 4:
         try:
             return date(int(value), 12, 31)
@@ -189,6 +266,15 @@ def _eodhd_statement_yearly(
     financials: Mapping[str, Any],
     key: str,
 ) -> dict[date, dict[str, Any]]:
+    """Extract yearly statement values into a date-keyed mapping.
+
+    Args:
+        financials (Mapping[str, Any]): EODHD financials payload.
+        key (str): Statement key (e.g., Income_Statement).
+
+    Returns:
+        dict[date, dict[str, Any]]: Statement values by date.
+    """
     statement = financials.get(key, {})
     yearly = statement.get("yearly", {}) if isinstance(statement, Mapping) else {}
     return {
@@ -203,10 +289,20 @@ def _build_line_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
 ) -> LineItems:
+    """Construct a LineItems object from a normalized record.
+
+    Args:
+        record (Mapping[str, Any]): Normalized record.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        LineItems: Normalized line items for the record.
+    """
     period = _parse_date(record.get("date"))
     if period is None:
         raise ValueError("record date is missing or invalid")
 
+    # Build statements independently, then validate accounting identity.
     income = _build_income_items(record, field_map)
     balance = _build_balance_items(record, field_map)
     cash_flow = _build_cash_flow_items(record, field_map)
@@ -220,11 +316,22 @@ def _build_income_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
 ) -> dict[str, float | None]:
+    """Build normalized income statement items.
+
+    Args:
+        record (Mapping[str, Any]): Normalized record.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        dict[str, float | None]: Income statement values.
+    """
+    # Currying the record keeps calls compact and explicit.
     value_of = _value_in(record)
     negative_value_of = _negative_value_in(record)
     revenue = value_of(*field_map["revenue"])
     gross_profit = value_of(*field_map["gross_profit"])
     gross_costs_reported = negative_value_of(*field_map["gross_costs"])
+    # Validate derived line items against reported values when both exist.
     gross_costs = _checked_value(
         "gross_costs",
         _calculate_gross_costs(revenue, gross_profit),
@@ -318,6 +425,15 @@ def _build_balance_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
 ) -> dict[str, float | None]:
+    """Build normalized balance sheet items.
+
+    Args:
+        record (Mapping[str, Any]): Normalized record.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        dict[str, float | None]: Balance sheet values.
+    """
     value_of = _value_in(record)
     cash_short_term = value_of(*field_map["cash_short_term_investments"])
     inventory = value_of(*field_map["inventory"])
@@ -385,6 +501,15 @@ def _build_cash_flow_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
 ) -> dict[str, float | None]:
+    """Build normalized cash flow statement items.
+
+    Args:
+        record (Mapping[str, Any]): Normalized record.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        dict[str, float | None]: Cash flow statement values.
+    """
     value_of = _value_in(record)
     negative_value_of = _negative_value_in(record)
     net_income_cfs = value_of(*field_map["net_income_cfs"])
@@ -486,6 +611,14 @@ def _build_cash_flow_items(
 
 
 def _parse_date(value: Any) -> date | None:
+    """Parse a date from supported types.
+
+    Args:
+        value (Any): Value that may represent a date.
+
+    Returns:
+        date | None: Parsed date, if possible.
+    """
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -499,6 +632,15 @@ def _parse_date(value: Any) -> date | None:
 
 
 def _value(record: Mapping[str, Any], *keys: str) -> float | None:
+    """Return the first numeric value for any provided key.
+
+    Args:
+        record (Mapping[str, Any]): Record with raw values.
+        *keys (str): Candidate field names to try in order.
+
+    Returns:
+        float | None: Parsed numeric value if found.
+    """
     for key in keys:
         if key in record:
             return _to_float(record.get(key))
@@ -506,6 +648,15 @@ def _value(record: Mapping[str, Any], *keys: str) -> float | None:
 
 
 def _negative_value(record: Mapping[str, Any], *keys: str) -> float | None:
+    """Return the negative numeric value for the first matching key.
+
+    Args:
+        record (Mapping[str, Any]): Record with raw values.
+        *keys (str): Candidate field names to try in order.
+
+    Returns:
+        float | None: Negated numeric value if found.
+    """
     value = _value(record, *keys)
     if value is None:
         return None
@@ -513,14 +664,38 @@ def _negative_value(record: Mapping[str, Any], *keys: str) -> float | None:
 
 
 def _value_in(record: Mapping[str, Any]):
+    """Curry a record into a value lookup function.
+
+    Args:
+        record (Mapping[str, Any]): Record with raw values.
+
+    Returns:
+        Callable[..., float | None]: Function that resolves values by key list.
+    """
     return lambda *keys: _value(record, *keys)
 
 
 def _negative_value_in(record: Mapping[str, Any]):
+    """Curry a record into a negative value lookup function.
+
+    Args:
+        record (Mapping[str, Any]): Record with raw values.
+
+    Returns:
+        Callable[..., float | None]: Function that resolves negated values.
+    """
     return lambda *keys: _negative_value(record, *keys)
 
 
 def _to_float(value: Any) -> float | None:
+    """Convert known numeric representations to float.
+
+    Args:
+        value (Any): Raw value to convert.
+
+    Returns:
+        float | None: Converted float if possible.
+    """
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -537,6 +712,16 @@ def _to_float(value: Any) -> float | None:
 
 
 def _checked_value(name: str, calculated: float | None, reported: float | None) -> float | None:
+    """Return a value if consistent; otherwise raise on mismatches.
+
+    Args:
+        name (str): Field name for error messages.
+        calculated (float | None): Computed value.
+        reported (float | None): Reported value.
+
+    Returns:
+        float | None: Value to use after consistency checks.
+    """
     if calculated is None:
         return reported
     if reported is None:
@@ -551,6 +736,16 @@ def _split_dep_amort(
     amortization: float | None,
     dep_amort: float | None,
 ) -> tuple[float | None, float | None]:
+    """Derive depreciation/amortization from a combined value when needed.
+
+    Args:
+        depreciation (float | None): Reported depreciation.
+        amortization (float | None): Reported amortization.
+        dep_amort (float | None): Combined depreciation and amortization.
+
+    Returns:
+        tuple[float | None, float | None]: Depreciation and amortization values.
+    """
     if dep_amort is None:
         return depreciation, amortization
     if depreciation is None and amortization is None:
@@ -566,6 +761,15 @@ def _calculate_gross_costs(
     revenue: float | None,
     gross_profit: float | None,
 ) -> float | None:
+    """Compute gross costs as gross profit minus revenue.
+
+    Args:
+        revenue (float | None): Revenue value.
+        gross_profit (float | None): Gross profit value.
+
+    Returns:
+        float | None: Gross costs value.
+    """
     if revenue is None or gross_profit is None:
         return None
     return gross_profit - revenue
@@ -577,6 +781,17 @@ def _calculate_other_operating_expenses(
     amortization: float | None,
     operating_income: float | None,
 ) -> float | None:
+    """Compute other operating expenses from operating income components.
+
+    Args:
+        gross_profit (float | None): Gross profit value.
+        depreciation (float | None): Depreciation value.
+        amortization (float | None): Amortization value.
+        operating_income (float | None): Operating income value.
+
+    Returns:
+        float | None: Other operating expenses value.
+    """
     if gross_profit is None or operating_income is None:
         return None
     depreciation = depreciation or 0.0
@@ -590,6 +805,17 @@ def _calculate_operating_income(
     amortization: float | None,
     other_operating_expenses: float | None,
 ) -> float | None:
+    """Compute operating income from gross profit and operating expenses.
+
+    Args:
+        gross_profit (float | None): Gross profit value.
+        depreciation (float | None): Depreciation value.
+        amortization (float | None): Amortization value.
+        other_operating_expenses (float | None): Other operating expenses value.
+
+    Returns:
+        float | None: Operating income value.
+    """
     if gross_profit is None or other_operating_expenses is None:
         return None
     depreciation = depreciation or 0.0
@@ -604,6 +830,18 @@ def _calculate_other_non_operating_income(
     reported: float | None,
     pre_tax_income: float | None,
 ) -> float | None:
+    """Compute non-operating income when not directly reported.
+
+    Args:
+        operating_income (float | None): Operating income value.
+        interest_income (float | None): Interest income value.
+        interest_expense (float | None): Interest expense value.
+        reported (float | None): Reported non-operating income if present.
+        pre_tax_income (float | None): Pre-tax income value.
+
+    Returns:
+        float | None: Other non-operating income value.
+    """
     if reported is not None:
         return reported
     if operating_income is None or pre_tax_income is None:
@@ -619,6 +857,17 @@ def _calculate_pre_tax_income(
     interest_expense: float | None,
     other_non_operating: float | None,
 ) -> float | None:
+    """Compute pre-tax income from operating and non-operating items.
+
+    Args:
+        operating_income (float | None): Operating income value.
+        interest_income (float | None): Interest income value.
+        interest_expense (float | None): Interest expense value.
+        other_non_operating (float | None): Other non-operating income.
+
+    Returns:
+        float | None: Pre-tax income value.
+    """
     if operating_income is None:
         return None
     interest_income = interest_income or 0.0
@@ -632,6 +881,16 @@ def _calculate_net_income(
     income_tax: float | None,
     affiliates_income: float | None,
 ) -> float | None:
+    """Compute net income from pre-tax income and tax adjustments.
+
+    Args:
+        pre_tax_income (float | None): Pre-tax income value.
+        income_tax (float | None): Income tax value.
+        affiliates_income (float | None): Affiliates income value.
+
+    Returns:
+        float | None: Net income value.
+    """
     if pre_tax_income is None:
         return None
     income_tax = income_tax or 0.0
@@ -644,6 +903,16 @@ def _calculate_net_income_common(
     minorities_expense: float | None,
     preferred_dividends: float | None,
 ) -> float | None:
+    """Compute net income attributable to common shareholders.
+
+    Args:
+        net_income (float | None): Net income value.
+        minorities_expense (float | None): Minority interest expense.
+        preferred_dividends (float | None): Preferred dividends.
+
+    Returns:
+        float | None: Net income to common shareholders.
+    """
     if net_income is None:
         return None
     minorities_expense = minorities_expense or 0.0
@@ -656,6 +925,16 @@ def _calculate_ebitda(
     depreciation: float | None,
     amortization: float | None,
 ) -> float | None:
+    """Compute EBITDA from operating income and non-cash charges.
+
+    Args:
+        operating_income (float | None): Operating income value.
+        depreciation (float | None): Depreciation value.
+        amortization (float | None): Amortization value.
+
+    Returns:
+        float | None: EBITDA value.
+    """
     if operating_income is None:
         return None
     depreciation = depreciation or 0.0
@@ -669,6 +948,17 @@ def _calculate_other_current_assets(
     inventory: float | None,
     receivables: float | None,
 ) -> float | None:
+    """Compute other current assets as the residual of current assets.
+
+    Args:
+        current_assets (float | None): Total current assets.
+        cash_short_term (float | None): Cash and short-term investments.
+        inventory (float | None): Inventory.
+        receivables (float | None): Receivables.
+
+    Returns:
+        float | None: Other current assets value.
+    """
     if current_assets is None:
         return None
     cash_short_term = cash_short_term or 0.0
@@ -681,6 +971,15 @@ def _calculate_total_non_current_assets(
     total_assets: float | None,
     current_assets: float | None,
 ) -> float | None:
+    """Compute total non-current assets as total minus current.
+
+    Args:
+        total_assets (float | None): Total assets.
+        current_assets (float | None): Current assets.
+
+    Returns:
+        float | None: Total non-current assets value.
+    """
     if total_assets is None or current_assets is None:
         return None
     return total_assets - current_assets
@@ -693,6 +992,18 @@ def _calculate_other_non_current_assets(
     intangibles: float | None,
     investments_lt: float | None,
 ) -> float | None:
+    """Compute other non-current assets as the residual.
+
+    Args:
+        total_non_current_assets (float | None): Total non-current assets.
+        ppe_net (float | None): Net PPE value.
+        software (float | None): Software value.
+        intangibles (float | None): Intangible assets value.
+        investments_lt (float | None): Long-term investments value.
+
+    Returns:
+        float | None: Other non-current assets value.
+    """
     if total_non_current_assets is None:
         return None
     ppe_net = ppe_net or 0.0
@@ -707,6 +1018,16 @@ def _calculate_total_equity(
     preferred_stock: float | None,
     minority_equity: float | None,
 ) -> float | None:
+    """Compute total equity from common, preferred, and minority interests.
+
+    Args:
+        common_equity (float | None): Common equity value.
+        preferred_stock (float | None): Preferred stock value.
+        minority_equity (float | None): Minority interest value.
+
+    Returns:
+        float | None: Total equity value.
+    """
     if common_equity is None and preferred_stock is None and minority_equity is None:
         return None
     common_equity = common_equity or 0.0
@@ -722,6 +1043,18 @@ def _calculate_other_cfo(
     amortization: float | None,
     working_capital_change: float | None,
 ) -> float | None:
+    """Compute other CFO as the residual of known components.
+
+    Args:
+        cash_from_operations (float | None): Reported CFO.
+        net_income (float | None): Net income.
+        depreciation (float | None): Depreciation.
+        amortization (float | None): Amortization.
+        working_capital_change (float | None): Working capital change.
+
+    Returns:
+        float | None: Other CFO value.
+    """
     if cash_from_operations is None:
         return None
     net_income = net_income or 0.0
@@ -744,6 +1077,18 @@ def _calculate_cash_from_operations(
     working_capital_change: float | None,
     other_cfo: float | None,
 ) -> float | None:
+    """Compute total CFO from net income and adjustments.
+
+    Args:
+        net_income (float | None): Net income.
+        depreciation (float | None): Depreciation.
+        amortization (float | None): Amortization.
+        working_capital_change (float | None): Working capital change.
+        other_cfo (float | None): Other CFO.
+
+    Returns:
+        float | None: Cash from operations.
+    """
     if net_income is None:
         return None
     depreciation = depreciation or 0.0
@@ -759,6 +1104,17 @@ def _calculate_other_cfi(
     capex_other: float | None,
     sale_ppe: float | None,
 ) -> float | None:
+    """Compute other CFI as the residual of investing flows.
+
+    Args:
+        cash_from_investing (float | None): Reported CFI.
+        capex_fixed (float | None): Fixed asset capex.
+        capex_other (float | None): Other capex.
+        sale_ppe (float | None): Proceeds from PPE sales.
+
+    Returns:
+        float | None: Other CFI value.
+    """
     if cash_from_investing is None:
         return None
     capex_fixed = capex_fixed or 0.0
@@ -773,6 +1129,17 @@ def _calculate_cash_from_investing(
     sale_ppe: float | None,
     other_cfi: float | None,
 ) -> float | None:
+    """Compute total CFI from component investing flows.
+
+    Args:
+        capex_fixed (float | None): Fixed asset capex.
+        capex_other (float | None): Other capex.
+        sale_ppe (float | None): Proceeds from PPE sales.
+        other_cfi (float | None): Other CFI value.
+
+    Returns:
+        float | None: Cash from investing.
+    """
     if capex_fixed is None and capex_other is None and sale_ppe is None and other_cfi is None:
         return None
     capex_fixed = capex_fixed or 0.0
@@ -789,6 +1156,18 @@ def _calculate_other_cff(
     share_sales: float | None,
     debt_cash_flow: float | None,
 ) -> float | None:
+    """Compute other CFF as the residual of financing flows.
+
+    Args:
+        cash_from_financing (float | None): Reported CFF.
+        dividends_paid (float | None): Dividends paid.
+        share_purchases (float | None): Share repurchases.
+        share_sales (float | None): Share issuance.
+        debt_cash_flow (float | None): Debt cash flow.
+
+    Returns:
+        float | None: Other CFF value.
+    """
     if cash_from_financing is None:
         return None
     dividends_paid = dividends_paid or 0.0
@@ -811,6 +1190,18 @@ def _calculate_cash_from_financing(
     debt_cash_flow: float | None,
     other_cff: float | None,
 ) -> float | None:
+    """Compute total CFF from dividends, equity, and debt flows.
+
+    Args:
+        dividends_paid (float | None): Dividends paid.
+        share_purchases (float | None): Share repurchases.
+        share_sales (float | None): Share issuance.
+        debt_cash_flow (float | None): Debt cash flow.
+        other_cff (float | None): Other CFF value.
+
+    Returns:
+        float | None: Cash from financing.
+    """
     if (
         dividends_paid is None
         and share_purchases is None
@@ -832,6 +1223,16 @@ def _calculate_change_in_cash(
     cash_from_investing: float | None,
     cash_from_financing: float | None,
 ) -> float | None:
+    """Compute change in cash as the sum of the three statements.
+
+    Args:
+        cash_from_operations (float | None): Cash from operations.
+        cash_from_investing (float | None): Cash from investing.
+        cash_from_financing (float | None): Cash from financing.
+
+    Returns:
+        float | None: Net change in cash.
+    """
     if cash_from_operations is None and cash_from_investing is None and cash_from_financing is None:
         return None
     cash_from_operations = cash_from_operations or 0.0
@@ -845,6 +1246,16 @@ def _calculate_free_cash_flow(
     capex_fixed: float | None,
     capex_other: float | None,
 ) -> float | None:
+    """Compute free cash flow as CFO plus capex.
+
+    Args:
+        cash_from_operations (float | None): Cash from operations.
+        capex_fixed (float | None): Fixed asset capex.
+        capex_other (float | None): Other capex.
+
+    Returns:
+        float | None: Free cash flow.
+    """
     if cash_from_operations is None:
         return None
     capex_fixed = capex_fixed or 0.0
@@ -853,6 +1264,14 @@ def _calculate_free_cash_flow(
 
 
 def _assert_accounting_identity(balance: Mapping[str, float | None]) -> None:
+    """Validate assets equal liabilities plus equity when all present.
+
+    Args:
+        balance (Mapping[str, float | None]): Balance sheet values.
+
+    Returns:
+        None: Raises ValueError when identity fails.
+    """
     total_assets = balance.get("total_assets")
     total_liabilities = balance.get("total_liabilities")
     total_equity = balance.get("total_equity")
