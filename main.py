@@ -10,7 +10,13 @@ from typing import Any
 import requests
 
 from src.domain.schemas import Assumptions
-from src.io.database import get_engine, get_latest_filing_date, write_financial_facts, write_reported_facts
+from src.io.database import (
+    ensure_schema,
+    get_engine,
+    get_latest_filing_date,
+    write_financial_facts,
+    write_reported_facts,
+)
 from src.io.reporting import export_model_to_excel
 from src.io.storage import build_run_data_dir, save_raw_payload, save_share_data
 from src.logic.forecasting import generate_forecast
@@ -78,10 +84,12 @@ def run_pipeline(results_dir: Path) -> None:
     tickers = get_tickers_needing_update()
     data_dir = build_run_data_dir(results_dir.name)
     logger.info("Created data directory: %s", data_dir)
-    connection_string = os.getenv("SQLSERVER_CONN_STR")
-    engine = get_engine(connection_string) if connection_string else None
+    db_path = os.getenv("SQLITE_DB_PATH")
+    engine = get_engine(db_path) if db_path else None
     if engine is None:
-        logger.info("SQLSERVER_CONN_STR not set; skipping database writes")
+        logger.info("SQLITE_DB_PATH not set; skipping database writes")
+    else:
+        ensure_schema(engine)
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
     for ticker in tickers_to_process:

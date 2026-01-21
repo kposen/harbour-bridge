@@ -3,6 +3,5 @@ openpyxl
 pandas
 pydantic
 pytest
-pyodbc
 requests
 sqlalchemy

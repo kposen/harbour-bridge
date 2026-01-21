@@ -27,16 +27,16 @@ NEGATIVE_LINE_ITEMS = {
 }
 
 
-def get_engine(connection_string: str) -> Engine:
-    """Create a SQLAlchemy engine for SQL Server.
+def get_engine(db_path: str) -> Engine:
+    """Create a SQLAlchemy engine for SQLite.
 
     Args:
-        connection_string (str): SQLAlchemy connection string.
+        db_path (str): Filesystem path to the SQLite database.
 
     Returns:
-        Engine: SQLAlchemy engine bound to SQL Server.
+        Engine: SQLAlchemy engine bound to SQLite.
     """
-    return create_engine(connection_string, future=True)
+    return create_engine(f"sqlite:///{db_path}", future=True)
 
 
 def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
@@ -52,7 +52,7 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     query = text(
         """
         SELECT MAX(filing_date) AS latest_filing_date
-        FROM dbo.financial_facts
+        FROM financial_facts
         WHERE symbol = :symbol
           AND is_forecast = 0
           AND value_source IN ('reported', 'reported_raw')
@@ -63,6 +63,48 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     if isinstance(result, date):
         return result
     return None
+
+
+def ensure_schema(engine: Engine) -> None:
+    """Ensure the financial_facts table exists.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+
+    Returns:
+        None: Creates schema when missing.
+    """
+    schema_sql = """
+    CREATE TABLE IF NOT EXISTS financial_facts (
+        symbol TEXT NOT NULL,
+        fiscal_date TEXT NOT NULL,
+        filing_date TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
+        period_type TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        line_item TEXT NOT NULL,
+        value_source TEXT NOT NULL,
+        value REAL NULL,
+        is_forecast INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        PRIMARY KEY (
+            symbol,
+            fiscal_date,
+            filing_date,
+            retrieval_date,
+            period_type,
+            statement,
+            line_item,
+            value_source
+        )
+    );
+    CREATE INDEX IF NOT EXISTS IX_financial_facts_symbol_fiscal
+        ON financial_facts (symbol, fiscal_date, period_type);
+    CREATE INDEX IF NOT EXISTS IX_financial_facts_retrieval
+        ON financial_facts (retrieval_date);
+    """
+    with engine.begin() as conn:
+        conn.exec_driver_sql(schema_sql)
 
 
 def write_financial_facts(
@@ -106,7 +148,7 @@ def write_financial_facts(
     logger.info("Writing %d fact rows for %s", len(rows), symbol)
     insert_sql = text(
         """
-        INSERT INTO dbo.financial_facts (
+        INSERT INTO financial_facts (
             symbol,
             fiscal_date,
             filing_date,
@@ -223,7 +265,7 @@ def write_reported_facts(
     logger.info("Writing %d reported fact rows for %s", len(rows), symbol)
     insert_sql = text(
         """
-        INSERT INTO dbo.financial_facts (
+        INSERT INTO financial_facts (
             symbol,
             fiscal_date,
             filing_date,
