@@ -272,6 +272,7 @@ def _iter_reported_rows(
                 if fiscal_date is None:
                     continue
                 filing_date = _parse_date(values.get("filing_date")) or fiscal_date
+                period_label = "annual" if period_type == "yearly" else "quarterly"
                 for line_item, keys in field_map.items():
                     raw_value = _first_value(values, keys)
                     if raw_value is None:
@@ -282,11 +283,28 @@ def _iter_reported_rows(
                         "fiscal_date": fiscal_date,
                         "filing_date": filing_date,
                         "retrieval_date": retrieval_date,
-                        "period_type": "annual" if period_type == "yearly" else "quarterly",
+                        "period_type": period_label,
                         "statement": statement,
                         "line_item": line_item,
                         "value_source": "reported",
                         "value": value,
+                        "is_forecast": False,
+                        "provider": provider,
+                    }
+                for raw_key, raw_value in values.items():
+                    numeric_value = _to_float(raw_value)
+                    if numeric_value is None:
+                        continue
+                    yield {
+                        "symbol": symbol,
+                        "fiscal_date": fiscal_date,
+                        "filing_date": filing_date,
+                        "retrieval_date": retrieval_date,
+                        "period_type": period_label,
+                        "statement": statement,
+                        "line_item": str(raw_key),
+                        "value_source": "reported_raw",
+                        "value": numeric_value,
                         "is_forecast": False,
                         "provider": provider,
                     }
