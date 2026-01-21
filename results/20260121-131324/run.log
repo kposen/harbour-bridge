@@ -1,0 +1,64 @@
+2026-01-21 13:13:24,821 INFO __main__ Starting pipeline for 1 tickers
+2026-01-21 13:13:24,821 INFO __main__ Processing ticker: AAPL.US
+2026-01-21 13:13:24,822 INFO __main__ Fetching fundamentals for AAPL.US
+2026-01-21 13:13:24,827 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): eodhd.com:443
+2026-01-21 13:13:25,701 DEBUG urllib3.connectionpool https://eodhd.com:443 "GET /api/fundamentals/AAPL.US?api_token=DEMO&fmt=json HTTP/1.1" 200 None
+2026-01-21 13:13:25,997 DEBUG __main__ Received fundamentals payload keys: ['AnalystRatings', 'ESGScores', 'Earnings', 'Financials', 'General', 'Highlights', 'Holders', 'InsiderTransactions', 'SharesStats', 'SplitsDividends', 'Technicals', 'Valuation', 'outstandingShares']
+2026-01-21 13:13:25,999 DEBUG src.logic.historic_builder Parsed 41 share-date entries
+2026-01-21 13:13:26,000 DEBUG src.logic.historic_builder EODHD yearly records: income=41 balance=41 cashflow=37 merged=41
+2026-01-21 13:13:26,000 DEBUG src.logic.historic_builder Attached shares to 0 records
+2026-01-21 13:13:26,001 DEBUG src.logic.historic_builder Extracted 41 records
+2026-01-21 13:13:26,005 INFO src.logic.historic_builder ebitda mismatch: calculated=1022900000.0 reported=1081332000.0
+2026-01-21 13:13:26,005 INFO src.logic.historic_builder ebitda mismatch: calculated=276100000.0 reported=318000000.0
+2026-01-21 13:13:26,006 INFO src.logic.historic_builder ebitda mismatch: calculated=690232000.0 reported=708000000.0
+2026-01-21 13:13:26,006 INFO src.logic.historic_builder ebitda mismatch: calculated=811000000.0 reported=849000000.0
+2026-01-21 13:13:26,006 INFO src.logic.historic_builder ebitda mismatch: calculated=-1267000000.0 reported=-1119000000.0
+2026-01-21 13:13:26,007 INFO src.logic.historic_builder ebitda mismatch: calculated=-952000000.0 reported=-856000000.0
+2026-01-21 13:13:26,007 INFO src.logic.historic_builder net_income mismatch: calculated=-1326000000.0 reported=-1045000000.0
+2026-01-21 13:13:26,008 INFO src.logic.historic_builder ebitda mismatch: calculated=372000000.0 reported=502000000.0
+2026-01-21 13:13:26,008 INFO src.logic.historic_builder ebitda mismatch: calculated=444000000.0 reported=808000000.0
+2026-01-21 13:13:26,009 INFO src.logic.historic_builder ebitda mismatch: calculated=606000000.0 reported=1197000000.0
+2026-01-21 13:13:26,009 INFO src.logic.historic_builder ebitda mismatch: calculated=-244000000.0 reported=64000000.0
+2026-01-21 13:13:26,009 INFO src.logic.historic_builder ebitda mismatch: calculated=131000000.0 reported=212000000.0
+2026-01-21 13:13:26,010 INFO src.logic.historic_builder ebitda mismatch: calculated=112000000.0 reported=138000000.0
+2026-01-21 13:13:26,010 INFO src.logic.historic_builder gross_costs mismatch: calculated=-6020000000.0 reported=-6022000000.0
+2026-01-21 13:13:26,010 INFO src.logic.historic_builder ebitda mismatch: calculated=463000000.0 reported=523000000.0
+2026-01-21 13:13:26,010 INFO src.logic.historic_builder net_income mismatch: calculated=266000000.0 reported=276000000.0
+2026-01-21 13:13:26,011 INFO src.logic.historic_builder net_income mismatch: calculated=1328000000.0 reported=1335000000.0
+2026-01-21 13:13:26,011 INFO src.logic.historic_builder ebitda mismatch: calculated=4726000000.0 reported=4724000000.0
+2026-01-21 13:13:26,011 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=4735000000.0 reported=4484000000.0
+2026-01-21 13:13:26,011 INFO src.logic.historic_builder ebitda mismatch: calculated=6684000000.0 reported=7304000000.0
+2026-01-21 13:13:26,012 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=8505000000.0 reported=8397000000.0
+2026-01-21 13:13:26,012 INFO src.logic.historic_builder net_income mismatch: calculated=8235000000.0 reported=5704000000.0
+2026-01-21 13:13:26,013 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=9015000000.0 reported=8946000000.0
+2026-01-21 13:13:26,014 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=16590000000.0 reported=16474000000.0
+2026-01-21 13:13:26,015 INFO src.logic.historic_builder ebitda mismatch: calculated=35604000000.0 reported=36019000000.0
+2026-01-21 13:13:26,015 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=33269000000.0 reported=30077000000.0
+2026-01-21 13:13:26,015 INFO src.logic.historic_builder ebitda mismatch: calculated=58518000000.0 reported=59040000000.0
+2026-01-21 13:13:26,015 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=42561000000.0 reported=41454000000.0
+2026-01-21 13:13:26,016 INFO src.logic.historic_builder ebitda mismatch: calculated=55756000000.0 reported=57048000000.0
+2026-01-21 13:13:26,016 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=45501000000.0 reported=44590000000.0
+2026-01-21 13:13:26,016 INFO src.logic.historic_builder ebitda mismatch: calculated=60449000000.0 reported=61813000000.0
+2026-01-21 13:13:26,016 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=50142000000.0 reported=49900000000.0
+2026-01-21 13:13:26,017 INFO src.logic.historic_builder ebitda mismatch: calculated=82487000000.0 reported=84505000000.0
+2026-01-21 13:13:26,017 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=70019000000.0 reported=69778000000.0
+2026-01-21 13:13:26,017 INFO src.logic.historic_builder ebitda mismatch: calculated=70529000000.0 reported=73333000000.0
+2026-01-21 13:13:26,017 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=53090000000.0 reported=52276000000.0
+2026-01-21 13:13:26,017 INFO src.logic.historic_builder ebitda mismatch: calculated=71501000000.0 reported=76569000000.0
+2026-01-21 13:13:26,018 INFO src.logic.historic_builder free_cash_flow mismatch: calculated=51147000000.0 reported=50803000000.0
+2026-01-21 13:13:26,018 INFO src.logic.historic_builder ebitda mismatch: calculated=81801000000.0 reported=87046000000.0
+2026-01-21 13:13:26,018 INFO src.logic.historic_builder ebitda mismatch: calculated=76477000000.0 reported=81860000000.0
+2026-01-21 13:13:26,019 INFO src.logic.historic_builder ebitda mismatch: calculated=77344000000.0 reported=81020000000.0
+2026-01-21 13:13:26,019 INFO src.logic.historic_builder ebitda mismatch: calculated=120233000000.0 reported=123136000000.0
+2026-01-21 13:13:26,020 INFO src.logic.historic_builder ebitda mismatch: calculated=144748000000.0 reported=144427000000.0
+2026-01-21 13:13:26,020 DEBUG src.logic.historic_builder Built 41 LineItems entries
+2026-01-21 13:13:26,022 DEBUG src.logic.forecasting Forecasting period 2026-09-30
+2026-01-21 13:13:26,023 DEBUG src.logic.forecasting Forecasting period 2027-09-30
+2026-01-21 13:13:26,023 DEBUG src.logic.forecasting Forecasting period 2028-09-30
+2026-01-21 13:13:26,023 DEBUG src.logic.forecasting Forecasting period 2029-09-30
+2026-01-21 13:13:26,024 DEBUG src.logic.forecasting Forecasting period 2030-09-30
+2026-01-21 13:13:26,024 DEBUG src.logic.forecasting Forecasting period 2031-09-30
+2026-01-21 13:13:26,024 DEBUG src.logic.forecasting Generated 6 forecast periods
+2026-01-21 13:13:26,034 DEBUG src.io.storage Saved share data to /home/kevin/coding/harbour_bridge/data/AAPL.US.json
+2026-01-21 13:13:26,035 DEBUG src.io.reporting Exporting 47 periods to /home/kevin/coding/harbour_bridge/results/20260121-131324/AAPL.US.xlsx
+2026-01-21 13:13:26,723 INFO __main__ Pipeline complete
