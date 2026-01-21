@@ -36,6 +36,8 @@ shell.
 
 - `EODHD_API_KEY`: Required. Used by `fetch_data` to call the EODHD fundamentals
   endpoint.
+- `SQLSERVER_CONN_STR`: Optional. SQLAlchemy connection string for SQL Server
+  (e.g., `mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+18+for+SQL+Server`).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 
 ## Data Flow
@@ -45,6 +47,14 @@ shell.
    `LineItems` using an external mapping (`EODHD_FIELD_MAP`).
 3. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
 4. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
+
+## Database Storage (Optional)
+
+If you want to persist normalized facts to SQL Server, apply the schema in
+`docs/sql/schema.sql` and use the helpers in `src/io/database.py` to insert rows
+into `dbo.financial_facts`. The primary key includes symbol, fiscal date, filing
+date, retrieval date, period type, statement, line item, and value source to
+preserve versions and reported vs calculated values.
 
 ## Notes
 

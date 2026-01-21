@@ -65,3 +65,35 @@ def _share_path(ticker: str) -> Path:
     # Normalize to avoid duplicate files for different cases.
     normalized = ticker.strip().upper()
     return DATA_DIR / f"{normalized}.json"
+
+
+def build_run_data_dir(run_id: str) -> Path:
+    """Create a timestamped data directory for raw payloads.
+
+    Args:
+        run_id (str): Timestamp identifier for the run.
+
+    Returns:
+        Path: Directory path for this run's raw payloads.
+    """
+    run_dir = DATA_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def save_raw_payload(run_dir: Path, ticker: str, payload: dict[str, object]) -> Path:
+    """Persist the raw provider payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        ticker (str): Ticker symbol for the payload.
+        payload (dict[str, object]): Raw provider payload.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    normalized = ticker.strip().upper()
+    path = run_dir / f"{normalized}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved raw payload to %s", path)
+    return path

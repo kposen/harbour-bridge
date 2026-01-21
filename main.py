@@ -3,15 +3,16 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from src.domain.schemas import Assumptions
+from src.io.database import get_engine, write_financial_facts, write_reported_facts
 from src.io.reporting import export_model_to_excel
-from src.io.storage import save_share_data
+from src.io.storage import build_run_data_dir, save_raw_payload, save_share_data
 from src.logic.forecasting import generate_forecast
 from src.logic.historic_builder import build_historic_model
 
@@ -75,11 +76,20 @@ def run_pipeline(results_dir: Path) -> None:
     # Keep assumptions in the shell so logic modules stay pure.
     assumptions = Assumptions(growth_rates={}, margins={})
     tickers = get_tickers_needing_update()
+    data_dir = build_run_data_dir(results_dir.name)
+    logger.info("Created data directory: %s", data_dir)
+    connection_string = os.getenv("SQLSERVER_CONN_STR")
+    engine = get_engine(connection_string) if connection_string else None
+    if engine is None:
+        logger.info("SQLSERVER_CONN_STR not set; skipping database writes")
     logger.info("Starting pipeline for %d tickers", len(tickers))
     for ticker in tickers:
         logger.info("Processing ticker: %s", ticker)
         # Pull raw data, then build a clean historical model.
+        retrieval_date = datetime.utcnow()
         raw_data = fetch_data(ticker)
+        save_raw_payload(data_dir, ticker, raw_data)
+        filing_dates = _extract_filing_dates(raw_data)
         historic_model = build_historic_model(raw_data)
         # Add a forecast using placeholder assumptions.
         forecast_model = generate_forecast(historic_model, assumptions)
@@ -87,6 +97,25 @@ def run_pipeline(results_dir: Path) -> None:
         save_share_data(ticker, forecast_model)
         # Write an Excel workbook for each share.
         export_model_to_excel(forecast_model, results_dir / f"{ticker}.xlsx")
+        # Persist to SQL Server when configured.
+        if engine is not None:
+            write_reported_facts(
+                engine=engine,
+                symbol=ticker,
+                provider="EODHD",
+                retrieval_date=retrieval_date,
+                raw_data=raw_data,
+            )
+            write_financial_facts(
+                engine=engine,
+                symbol=ticker,
+                provider="EODHD",
+                retrieval_date=retrieval_date,
+                model=forecast_model,
+                filing_dates=filing_dates,
+                period_type="annual",
+                value_source="calculated",
+            )
     logger.info("Pipeline complete")
 
 
@@ -106,6 +135,58 @@ def _build_results_dir() -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Created results directory: %s", run_dir)
     return run_dir
+
+
+def _extract_filing_dates(raw_data: dict[str, Any]) -> dict[date, date]:
+    """Extract filing dates from an EODHD payload keyed by fiscal date.
+
+    Args:
+        raw_data (dict[str, Any]): Raw provider payload.
+
+    Returns:
+        dict[date, date]: Mapping from fiscal date to filing date.
+    """
+    financials = raw_data.get("Financials")
+    if not isinstance(financials, dict):
+        return {}
+    filing_dates: dict[date, date] = {}
+    for statement_key in ("Income_Statement", "Balance_Sheet", "Cash_Flow"):
+        statement = financials.get(statement_key, {})
+        if not isinstance(statement, dict):
+            continue
+        yearly = statement.get("yearly", {})
+        if not isinstance(yearly, dict):
+            continue
+        for fiscal_str, values in yearly.items():
+            if not isinstance(values, dict):
+                continue
+            fiscal_date = _parse_date(fiscal_str)
+            if fiscal_date is None:
+                continue
+            filing_date = _parse_date(values.get("filing_date"))
+            if filing_date is None:
+                continue
+            filing_dates[fiscal_date] = filing_date
+    return filing_dates
+
+
+def _parse_date(value: object) -> date | None:
+    """Parse a date from an ISO string.
+
+    Args:
+        value (object): Value to parse.
+
+    Returns:
+        date | None: Parsed date if possible.
+    """
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
 
 
 if __name__ == "__main__":
