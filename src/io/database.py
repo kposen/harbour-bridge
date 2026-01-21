@@ -39,6 +39,32 @@ def get_engine(connection_string: str) -> Engine:
     return create_engine(connection_string, future=True)
 
 
+def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
+    """Fetch the most recent filing date for a symbol.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQL Server.
+        symbol (str): Ticker symbol to query.
+
+    Returns:
+        date | None: Latest filing date or None if missing.
+    """
+    query = text(
+        """
+        SELECT MAX(filing_date) AS latest_filing_date
+        FROM dbo.financial_facts
+        WHERE symbol = :symbol
+          AND is_forecast = 0
+          AND value_source IN ('reported', 'reported_raw')
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(query, {"symbol": symbol}).scalar()
+    if isinstance(result, date):
+        return result
+    return None
+
+
 def write_financial_facts(
     engine: Engine,
     symbol: str,

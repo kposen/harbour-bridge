@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from src.domain.schemas import Assumptions
-from src.io.database import get_engine, write_financial_facts, write_reported_facts
+from src.io.database import get_engine, get_latest_filing_date, write_financial_facts, write_reported_facts
 from src.io.reporting import export_model_to_excel
 from src.io.storage import build_run_data_dir, save_raw_payload, save_share_data
 from src.logic.forecasting import generate_forecast
@@ -82,8 +82,9 @@ def run_pipeline(results_dir: Path) -> None:
     engine = get_engine(connection_string) if connection_string else None
     if engine is None:
         logger.info("SQLSERVER_CONN_STR not set; skipping database writes")
-    logger.info("Starting pipeline for %d tickers", len(tickers))
-    for ticker in tickers:
+    tickers_to_process = _filter_stale_tickers(tickers, engine)
+    logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
+    for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
         # Pull raw data, then build a clean historical model.
         retrieval_date = datetime.utcnow()
@@ -135,6 +136,69 @@ def _build_results_dir() -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Created results directory: %s", run_dir)
     return run_dir
+
+
+def _filter_stale_tickers(tickers: list[str], engine) -> list[str]:
+    """Filter tickers to those needing updates based on filing date age.
+
+    Args:
+        tickers (list[str]): Candidate tickers to process.
+        engine (Engine | None): SQL engine when available.
+
+    Returns:
+        list[str]: Tickers requiring refresh.
+    """
+    if engine is None:
+        return tickers
+    today = datetime.utcnow().date()
+    cutoff = _months_ago(today, 3)
+    stale = []
+    for ticker in tickers:
+        latest_filing = get_latest_filing_date(engine, ticker)
+        if latest_filing is None:
+            logger.info("No filing date found for %s; scheduling update", ticker)
+            stale.append(ticker)
+            continue
+        if latest_filing <= cutoff:
+            logger.info("Filing date for %s is older than %s; scheduling update", ticker, cutoff)
+            stale.append(ticker)
+    return stale
+
+
+def _months_ago(current: date, months: int) -> date:
+    """Return the date that is a number of calendar months before current.
+
+    Args:
+        current (date): Reference date.
+        months (int): Number of months to subtract.
+
+    Returns:
+        date: Date months before current, clamped to month end when needed.
+    """
+    year = current.year
+    month = current.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = min(current.day, _month_end_day(year, month))
+    return date(year, month, day)
+
+
+def _month_end_day(year: int, month: int) -> int:
+    """Return the last day of a given month.
+
+    Args:
+        year (int): Year to check.
+        month (int): Month to check.
+
+    Returns:
+        int: Last day of the month.
+    """
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    return (next_month - timedelta(days=1)).day
 
 
 def _extract_filing_dates(raw_data: dict[str, Any]) -> dict[date, date]:
