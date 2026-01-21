@@ -43,7 +43,7 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     """Fetch the most recent filing date for a symbol.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQL Server.
+        engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol to query.
 
     Returns:
@@ -167,7 +167,9 @@ def ensure_schema(engine: Engine) -> None:
         ON listings (primary_ticker, retrieval_date);
     """
     with engine.begin() as conn:
-        conn.exec_driver_sql(schema_sql)
+        for statement in (stmt.strip() for stmt in schema_sql.split(";")):
+            if statement:
+                conn.exec_driver_sql(statement)
 
 
 def write_market_metrics(
@@ -423,7 +425,47 @@ def _iter_earnings_rows(
     """
     earnings = raw_data.get("Earnings")
     if not isinstance(earnings, Mapping):
-    return []
+        return []
+    for branch, period_type in (
+        ("History", "quarterly"),
+        ("Annual", "annual"),
+        ("Trend", "trend"),
+    ):
+        data = earnings.get(branch)
+        if not isinstance(data, Mapping):
+            continue
+        for _, entry in data.items():
+            if not isinstance(entry, Mapping):
+                continue
+            period = entry.get("date")
+            if not isinstance(period, str) or not period.strip():
+                continue
+            for field, raw_value in entry.items():
+                if field in ("reportDate", "date"):
+                    continue
+                if isinstance(raw_value, (dict, list)):
+                    continue
+                value_float = _to_float(raw_value)
+                if value_float is not None:
+                    yield {
+                        "symbol": symbol,
+                        "date": period,
+                        "period_type": period_type,
+                        "field": str(field),
+                        "value_float": value_float,
+                        "value_text": None,
+                        "value_type": "float",
+                    }
+                elif raw_value is not None:
+                    yield {
+                        "symbol": symbol,
+                        "date": period,
+                        "period_type": period_type,
+                        "field": str(field),
+                        "value_float": None,
+                        "value_text": str(raw_value),
+                        "value_type": "text",
+                    }
 
 
 def _iter_holders_rows(
@@ -546,46 +588,6 @@ def _iter_listings_rows(
         if isinstance(entry.get("Exchange"), str)
         if entry.get("Exchange", "").strip()
     ]
-    for branch, period_type in (
-        ("History", "quarterly"),
-        ("Annual", "annual"),
-        ("Trend", "trend"),
-    ):
-        data = earnings.get(branch)
-        if not isinstance(data, Mapping):
-            continue
-        for _, entry in data.items():
-            if not isinstance(entry, Mapping):
-                continue
-            period = entry.get("date")
-            if not isinstance(period, str) or not period.strip():
-                continue
-            for field, raw_value in entry.items():
-                if field == "reportDate":
-                    continue
-                if isinstance(raw_value, (dict, list)):
-                    continue
-                value_float = _to_float(raw_value)
-                if value_float is not None:
-                    yield {
-                        "symbol": symbol,
-                        "date": period,
-                        "period_type": period_type,
-                        "field": str(field),
-                        "value_float": value_float,
-                        "value_text": None,
-                        "value_type": "float",
-                    }
-                elif raw_value is not None:
-                    yield {
-                        "symbol": symbol,
-                        "date": period,
-                        "period_type": period_type,
-                        "field": str(field),
-                        "value_float": None,
-                        "value_text": str(raw_value),
-                        "value_type": "text",
-                    }
 
 
 def _iter_market_metrics(
@@ -671,7 +673,7 @@ def write_financial_facts(
     """Write model line items to the financial_facts table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQL Server.
+        engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol for the model.
         provider (str): Provider name (e.g., "EODHD").
         retrieval_date (datetime): When the payload was retrieved.
@@ -755,10 +757,10 @@ def _iter_fact_rows(
     Returns:
         Iterable[dict[str, object]]: Row dictionaries for insertion.
     """
-    history_items = model.history
+    history_len = len(model.history)
     all_items = [*model.history, *model.forecast]
-    for item in all_items:
-        is_forecast = item not in history_items
+    for index, item in enumerate(all_items):
+        is_forecast = index >= history_len
         filing_date = filing_dates.get(item.period, item.period)
         for statement, values in (
             ("income", item.income),
@@ -792,7 +794,7 @@ def write_reported_facts(
     """Write reported provider values (annual + quarterly) to the fact table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQL Server.
+        engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
         retrieval_date (datetime): When the payload was retrieved.

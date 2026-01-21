@@ -111,7 +111,7 @@ def run_pipeline(results_dir: Path) -> None:
         save_share_data(ticker, forecast_model)
         # Write an Excel workbook for each share.
         export_model_to_excel(forecast_model, results_dir / f"{ticker}.xlsx")
-        # Persist to SQL Server when configured.
+        # Persist to SQLite when configured.
         if engine is not None:
             write_market_metrics(
                 engine=engine,

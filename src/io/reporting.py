@@ -6,6 +6,8 @@ from typing import Iterable
 
 import pandas as pd
 
+from src.domain.schemas import FinancialModel, LineItems
+
 
 INCOME_ORDER = (
     "revenue",
@@ -81,8 +83,6 @@ CASH_FLOW_ORDER = (
 )
 
 NUMBER_FORMAT = "#,##0;[Red](#,##0)"
-
-from src.domain.schemas import FinancialModel, LineItems
 
 
 logger = logging.getLogger(__name__)

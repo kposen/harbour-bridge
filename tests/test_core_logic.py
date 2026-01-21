@@ -23,17 +23,17 @@ def test_build_historic_model_minimal_payload() -> None:
         "records": [
             {
                 "date": "2023-12-31",
-                "ff_sales": 200.0,
-                "ff_gross_inc": 80.0,
-                "ff_assets": 100.0,
-                "ff_assets_curr": 40.0,
-                "ff_cash_st": 10.0,
-                "ff_inven": 5.0,
-                "ff_receiv_st": 15.0,
-                "ff_liabs": 35.0,
-                "ff_com_eq": 50.0,
-                "ff_pfd_stk": 10.0,
-                "ff_min_int_accum": 5.0,
+                "totalRevenue": 200.0,
+                "grossProfit": 80.0,
+                "totalAssets": 100.0,
+                "totalCurrentAssets": 40.0,
+                "cashAndShortTermInvestments": 10.0,
+                "inventory": 5.0,
+                "netReceivables": 15.0,
+                "totalLiab": 35.0,
+                "totalStockholderEquity": 50.0,
+                "preferredStock": 10.0,
+                "minorityInterest": 5.0,
             }
         ]
     }
