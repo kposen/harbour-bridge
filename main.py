@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import requests
 
 from src.domain.schemas import Assumptions
+from src.io.reporting import export_model_to_excel
 from src.io.storage import save_share_data
 from src.logic.forecasting import generate_forecast
 from src.logic.historic_builder import build_historic_model
@@ -60,11 +63,11 @@ def fetch_data(ticker: str) -> dict[str, Any]:
     return payload
 
 
-def run_pipeline() -> None:
+def run_pipeline(results_dir: Path) -> None:
     """Run the imperative pipeline: fetch -> build history -> forecast -> save.
 
     Args:
-        None
+        results_dir (Path): Directory for run outputs.
 
     Returns:
         None: Side effects are persisted to storage.
@@ -82,12 +85,41 @@ def run_pipeline() -> None:
         forecast_model = generate_forecast(historic_model, assumptions)
         # Persist the result as JSON.
         save_share_data(ticker, forecast_model)
+        # Write an Excel workbook for each share.
+        export_model_to_excel(forecast_model, results_dir / f"{ticker}.xlsx")
     logger.info("Pipeline complete")
 
 
+def _build_results_dir() -> Path:
+    """Create a timestamped results directory for the current run.
+
+    Args:
+        None
+
+    Returns:
+        Path: Directory path for this run's outputs.
+    """
+    root = Path(__file__).resolve().parent
+    results_root = root / "results"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = results_root / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Created results directory: %s", run_dir)
+    return run_dir
+
+
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    run_pipeline()
+    results_dir = _build_results_dir()
+    log_path = results_dir / "run.log"
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    logging.basicConfig(level=logging.DEBUG, handlers=[console_handler, file_handler])
+    run_pipeline(results_dir)
