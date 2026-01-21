@@ -14,7 +14,12 @@ from src.io.database import (
     ensure_schema,
     get_engine,
     get_latest_filing_date,
+    write_holders,
     write_financial_facts,
+    write_earnings,
+    write_insider_transactions,
+    write_listings,
+    write_market_metrics,
     write_reported_facts,
 )
 from src.io.reporting import export_model_to_excel
@@ -108,6 +113,32 @@ def run_pipeline(results_dir: Path) -> None:
         export_model_to_excel(forecast_model, results_dir / f"{ticker}.xlsx")
         # Persist to SQL Server when configured.
         if engine is not None:
+            write_market_metrics(
+                engine=engine,
+                symbol=ticker,
+                retrieval_date=retrieval_date,
+                raw_data=raw_data,
+            )
+            write_earnings(
+                engine=engine,
+                symbol=ticker,
+                raw_data=raw_data,
+            )
+            write_holders(
+                engine=engine,
+                symbol=ticker,
+                raw_data=raw_data,
+            )
+            write_insider_transactions(
+                engine=engine,
+                symbol=ticker,
+                raw_data=raw_data,
+            )
+            write_listings(
+                engine=engine,
+                retrieval_date=retrieval_date,
+                raw_data=raw_data,
+            )
             write_reported_facts(
                 engine=engine,
                 symbol=ticker,

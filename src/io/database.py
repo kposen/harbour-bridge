@@ -102,9 +102,560 @@ def ensure_schema(engine: Engine) -> None:
         ON financial_facts (symbol, fiscal_date, period_type);
     CREATE INDEX IF NOT EXISTS IX_financial_facts_retrieval
         ON financial_facts (retrieval_date);
+    CREATE TABLE IF NOT EXISTS market_metrics (
+        symbol TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
+        section TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        value_float REAL NULL,
+        value_text TEXT NULL,
+        value_type TEXT NOT NULL,
+        PRIMARY KEY (symbol, retrieval_date, section, metric)
+    );
+    CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
+        ON market_metrics (symbol, retrieval_date);
+    CREATE TABLE IF NOT EXISTS earnings (
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        period_type TEXT NOT NULL,
+        field TEXT NOT NULL,
+        value_float REAL NULL,
+        value_text TEXT NULL,
+        value_type TEXT NOT NULL,
+        PRIMARY KEY (symbol, date, period_type, field)
+    );
+    CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
+        ON earnings (symbol, date);
+    CREATE TABLE IF NOT EXISTS holders (
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        totalShares REAL NULL,
+        totalAssets REAL NULL,
+        currentShares REAL NULL,
+        change REAL NULL,
+        change_p REAL NULL,
+        PRIMARY KEY (symbol, date, name)
+    );
+    CREATE INDEX IF NOT EXISTS IX_holders_symbol_date
+        ON holders (symbol, date);
+    CREATE TABLE IF NOT EXISTS insider_transactions (
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        ownerName TEXT NOT NULL,
+        transactionDate TEXT NULL,
+        transactionCode TEXT NULL,
+        transactionAmount REAL NULL,
+        transactionPrice REAL NULL,
+        transactionAcquiredDisposed TEXT NULL,
+        postTransactionAmount REAL NULL,
+        secLink TEXT NULL,
+        PRIMARY KEY (symbol, date, ownerName)
+    );
+    CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
+        ON insider_transactions (symbol, date);
+    CREATE TABLE IF NOT EXISTS listings (
+        code TEXT NOT NULL,
+        exchange TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
+        primary_ticker TEXT NOT NULL,
+        name TEXT NULL,
+        PRIMARY KEY (code, exchange, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
+        ON listings (primary_ticker, retrieval_date);
     """
     with engine.begin() as conn:
         conn.exec_driver_sql(schema_sql)
+
+
+def write_market_metrics(
+    engine: Engine,
+    symbol: str,
+    retrieval_date: datetime,
+    raw_data: Mapping[str, object],
+) -> int:
+    """Write market metrics sections (Highlights, Valuation, etc.) to SQLite.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = list(_iter_market_metrics(symbol, retrieval_date, raw_data))
+    if not rows:
+        return 0
+    logger.info("Writing %d market metrics for %s", len(rows), symbol)
+    insert_sql = text(
+        """
+        INSERT INTO market_metrics (
+            symbol,
+            retrieval_date,
+            section,
+            metric,
+            value_float,
+            value_text,
+            value_type
+        )
+        VALUES (
+            :symbol,
+            :retrieval_date,
+            :section,
+            :metric,
+            :value_float,
+            :value_text,
+            :value_type
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, rows)
+    return len(rows)
+
+
+def write_earnings(
+    engine: Engine,
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> int:
+    """Write earnings payload data to the earnings table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = list(_iter_earnings_rows(symbol, raw_data))
+    if not rows:
+        return 0
+    logger.info("Writing %d earnings rows for %s", len(rows), symbol)
+    insert_sql = text(
+        """
+        INSERT INTO earnings (
+            symbol,
+            date,
+            period_type,
+            field,
+            value_float,
+            value_text,
+            value_type
+        )
+        VALUES (
+            :symbol,
+            :date,
+            :period_type,
+            :field,
+            :value_float,
+            :value_text,
+            :value_type
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, rows)
+    return len(rows)
+
+
+def write_holders(
+    engine: Engine,
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> int:
+    """Write holders payload data to the holders table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = _iter_holders_rows(symbol, raw_data)
+    if not rows:
+        return 0
+    logger.info("Writing %d holder rows for %s", len(rows), symbol)
+    insert_sql = text(
+        """
+        INSERT INTO holders (
+            symbol,
+            date,
+            name,
+            category,
+            totalShares,
+            totalAssets,
+            currentShares,
+            change,
+            change_p
+        )
+        VALUES (
+            :symbol,
+            :date,
+            :name,
+            :category,
+            :totalShares,
+            :totalAssets,
+            :currentShares,
+            :change,
+            :change_p
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, rows)
+    return len(rows)
+
+
+def write_insider_transactions(
+    engine: Engine,
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> int:
+    """Write insider transactions payload data to the insider_transactions table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = _iter_insider_rows(symbol, raw_data)
+    if not rows:
+        return 0
+    logger.info("Writing %d insider transactions for %s", len(rows), symbol)
+    insert_sql = text(
+        """
+        INSERT INTO insider_transactions (
+            symbol,
+            date,
+            ownerName,
+            transactionDate,
+            transactionCode,
+            transactionAmount,
+            transactionPrice,
+            transactionAcquiredDisposed,
+            postTransactionAmount,
+            secLink
+        )
+        VALUES (
+            :symbol,
+            :date,
+            :ownerName,
+            :transactionDate,
+            :transactionCode,
+            :transactionAmount,
+            :transactionPrice,
+            :transactionAcquiredDisposed,
+            :postTransactionAmount,
+            :secLink
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, rows)
+    return len(rows)
+
+
+def write_listings(
+    engine: Engine,
+    retrieval_date: datetime,
+    raw_data: Mapping[str, object],
+) -> int:
+    """Write listing relationships from General.Listings to the listings table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = _iter_listings_rows(retrieval_date, raw_data)
+    if not rows:
+        return 0
+    logger.info("Writing %d listing rows", len(rows))
+    insert_sql = text(
+        """
+        INSERT INTO listings (
+            code,
+            exchange,
+            retrieval_date,
+            primary_ticker,
+            name
+        )
+        VALUES (
+            :code,
+            :exchange,
+            :retrieval_date,
+            :primary_ticker,
+            :name
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, rows)
+    return len(rows)
+
+
+def _iter_earnings_rows(
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> Iterable[dict[str, object]]:
+    """Yield earnings rows from the payload.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    earnings = raw_data.get("Earnings")
+    if not isinstance(earnings, Mapping):
+    return []
+
+
+def _iter_holders_rows(
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Yield holder rows from the payload.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    holders = raw_data.get("Holders")
+    if not isinstance(holders, Mapping):
+        return []
+    return [
+        {
+            "symbol": symbol,
+            "date": entry.get("date", "").strip(),
+            "name": entry.get("name", "").strip(),
+            "category": category,
+            "totalShares": _to_float(entry.get("totalShares")),
+            "totalAssets": _to_float(entry.get("totalAssets")),
+            "currentShares": _to_float(entry.get("currentShares")),
+            "change": _to_float(entry.get("change")),
+            "change_p": _to_float(entry.get("change_p")),
+        }
+        for category in ("Institutions", "Funds")
+        for group in [holders.get(category)]
+        if isinstance(group, Mapping)
+        for entry in group.values()
+        if isinstance(entry, Mapping)
+        if isinstance(entry.get("name"), str)
+        if entry.get("name", "").strip()
+        if isinstance(entry.get("date"), str)
+        if entry.get("date", "").strip()
+    ]
+
+
+def _iter_insider_rows(
+    symbol: str,
+    raw_data: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Yield insider transaction rows from the payload.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    transactions = raw_data.get("InsiderTransactions")
+    if not isinstance(transactions, Mapping):
+        return []
+    rows: list[dict[str, object]] = []
+    for _, entry in transactions.items():
+        if not isinstance(entry, Mapping):
+            continue
+        owner = entry.get("ownerName")
+        date_str = entry.get("date")
+        if not isinstance(owner, str) or not owner.strip():
+            continue
+        if not isinstance(date_str, str) or not date_str.strip():
+            continue
+        rows.append(
+            {
+                "symbol": symbol,
+                "date": date_str,
+                "ownerName": owner.strip(),
+                "transactionDate": entry.get("transactionDate"),
+                "transactionCode": entry.get("transactionCode"),
+                "transactionAmount": _to_float(entry.get("transactionAmount")),
+                "transactionPrice": _to_float(entry.get("transactionPrice")),
+                "transactionAcquiredDisposed": entry.get("transactionAcquiredDisposed"),
+                "postTransactionAmount": _to_float(entry.get("postTransactionAmount")),
+                "secLink": entry.get("secLink"),
+            }
+        )
+    return rows
+
+
+def _iter_listings_rows(
+    retrieval_date: datetime,
+    raw_data: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Yield listing relationship rows from the payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    general = raw_data.get("General")
+    if not isinstance(general, Mapping):
+        return []
+    primary_ticker = general.get("PrimaryTicker")
+    listings = general.get("Listings")
+    if not isinstance(primary_ticker, str) or not primary_ticker.strip():
+        return []
+    if not isinstance(listings, Mapping):
+        return []
+    return [
+        {
+            "code": entry.get("Code", "").strip(),
+            "exchange": entry.get("Exchange", "").strip(),
+            "retrieval_date": retrieval_date,
+            "primary_ticker": primary_ticker.strip(),
+            "name": entry.get("Name"),
+        }
+        for entry in listings.values()
+        if isinstance(entry, Mapping)
+        if isinstance(entry.get("Code"), str)
+        if entry.get("Code", "").strip()
+        if isinstance(entry.get("Exchange"), str)
+        if entry.get("Exchange", "").strip()
+    ]
+    for branch, period_type in (
+        ("History", "quarterly"),
+        ("Annual", "annual"),
+        ("Trend", "trend"),
+    ):
+        data = earnings.get(branch)
+        if not isinstance(data, Mapping):
+            continue
+        for _, entry in data.items():
+            if not isinstance(entry, Mapping):
+                continue
+            period = entry.get("date")
+            if not isinstance(period, str) or not period.strip():
+                continue
+            for field, raw_value in entry.items():
+                if field == "reportDate":
+                    continue
+                if isinstance(raw_value, (dict, list)):
+                    continue
+                value_float = _to_float(raw_value)
+                if value_float is not None:
+                    yield {
+                        "symbol": symbol,
+                        "date": period,
+                        "period_type": period_type,
+                        "field": str(field),
+                        "value_float": value_float,
+                        "value_text": None,
+                        "value_type": "float",
+                    }
+                elif raw_value is not None:
+                    yield {
+                        "symbol": symbol,
+                        "date": period,
+                        "period_type": period_type,
+                        "field": str(field),
+                        "value_float": None,
+                        "value_text": str(raw_value),
+                        "value_type": "text",
+                    }
+
+
+def _iter_market_metrics(
+    symbol: str,
+    retrieval_date: datetime,
+    raw_data: Mapping[str, object],
+) -> Iterable[dict[str, object]]:
+    """Yield market metric rows from supported payload sections.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (Mapping[str, object]): Raw provider payload.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    sections = (
+        "General",
+        "Highlights",
+        "Valuation",
+        "ShareStats",
+        "SharesStats",
+        "Technicals",
+        "AnalystRatings",
+        "SplitsDividends",
+    )
+    for section in sections:
+        data = raw_data.get(section)
+        if not isinstance(data, Mapping):
+            continue
+        metrics = {
+            str(metric): raw_value
+            for metric, raw_value in data.items()
+            if not isinstance(raw_value, (dict, list))
+        }
+        if section == "General":
+            address_data = data.get("AddressData")
+            if isinstance(address_data, Mapping):
+                for key, value in address_data.items():
+                    key_name = str(key)
+                    if key_name in metrics:
+                        logger.info(
+                            "General.AddressData metric '%s' collides with General field '%s'",
+                            key_name,
+                            key_name,
+                        )
+                    metrics[key_name] = value
+        for metric, raw_value in metrics.items():
+            value_float = _to_float(raw_value)
+            if value_float is not None:
+                yield {
+                    "symbol": symbol,
+                    "retrieval_date": retrieval_date,
+                    "section": section,
+                    "metric": metric,
+                    "value_float": value_float,
+                    "value_text": None,
+                    "value_type": "float",
+                }
+            elif raw_value is not None:
+                yield {
+                    "symbol": symbol,
+                    "retrieval_date": retrieval_date,
+                    "section": section,
+                    "metric": metric,
+                    "value_float": None,
+                    "value_text": str(raw_value),
+                    "value_type": "text",
+                }
 
 
 def write_financial_facts(
@@ -376,6 +927,39 @@ def _iter_reported_rows(
                         "is_forecast": False,
                         "provider": provider,
                     }
+
+    outstanding = raw_data.get("outstandingShares")
+    if isinstance(outstanding, Mapping):
+        for period_type, label in (("annual", "annual"), ("quarterly", "quarterly")):
+            block = outstanding.get(period_type)
+            if isinstance(block, Mapping):
+                entries = block.values()
+            elif isinstance(block, list):
+                entries = block
+            else:
+                continue
+            for entry in entries:
+                if not isinstance(entry, Mapping):
+                    continue
+                fiscal_date = _parse_date(entry.get("dateFormatted"))
+                if fiscal_date is None:
+                    continue
+                shares = _to_float(entry.get("shares"))
+                if shares is None:
+                    continue
+                yield {
+                    "symbol": symbol,
+                    "fiscal_date": fiscal_date,
+                    "filing_date": fiscal_date,
+                    "retrieval_date": retrieval_date,
+                    "period_type": label,
+                    "statement": "multi_statement",
+                    "line_item": "shares",
+                    "value_source": "reported",
+                    "value": shares,
+                    "is_forecast": False,
+                    "provider": provider,
+                }
 
 
 def _first_value(values: Mapping[str, object], keys: tuple[str, ...]) -> float | None:
