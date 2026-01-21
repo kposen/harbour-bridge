@@ -81,6 +81,7 @@ def build_historic_model(
     """
     # Extract records from multiple supported shapes.
     records = _extract_records(raw_data)
+    ticker = _extract_ticker(raw_data)
     logger.debug("Extracted %d records", len(records))
     for record in records:
         # Ensure every record has a date to anchor its period.
@@ -88,7 +89,7 @@ def build_historic_model(
             raise ValueError("record date is missing or invalid")
     # Build line items in chronological order.
     history = [
-        _build_line_items(record, field_map)
+        _build_line_items(record, field_map, ticker)
         for record in sorted(records, key=lambda item: item["date"])
     ]
     logger.debug("Built %d LineItems entries", len(history))
@@ -140,6 +141,28 @@ def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
         return _attach_shares(records, shares_by_date)
 
     raise ValueError("raw_data must include 'records' or 'Financials'")
+
+
+def _extract_ticker(raw_data: Mapping[str, Any]) -> str | None:
+    """Extract a ticker symbol from raw provider payloads.
+
+    Args:
+        raw_data (Mapping[str, Any]): Raw provider payload.
+
+    Returns:
+        str | None: Ticker symbol when available.
+    """
+    general = raw_data.get("General")
+    if isinstance(general, Mapping):
+        for key in ("Code", "PrimaryTicker", "Ticker"):
+            value = general.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    for key in ("ticker", "code", "symbol"):
+        value = raw_data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -307,12 +330,14 @@ def _eodhd_statement_yearly(
 def _build_line_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
+    ticker: str | None,
 ) -> LineItems:
     """Construct a LineItems object from a normalized record.
 
     Args:
         record (Mapping[str, Any]): Normalized record.
         field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+        ticker (str | None): Ticker symbol for logging context.
 
     Returns:
         LineItems: Normalized line items for the record.
@@ -322,9 +347,9 @@ def _build_line_items(
         raise ValueError("record date is missing or invalid")
 
     # Build statements independently, then validate accounting identity.
-    income = _build_income_items(record, field_map)
+    income = _build_income_items(record, field_map, ticker, period)
     balance = _build_balance_items(record, field_map)
-    cash_flow = _build_cash_flow_items(record, field_map)
+    cash_flow = _build_cash_flow_items(record, field_map, ticker, period)
 
     _assert_accounting_identity(balance)
 
@@ -334,12 +359,16 @@ def _build_line_items(
 def _build_income_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
+    ticker: str | None,
+    period: date,
 ) -> dict[str, float | None]:
     """Build normalized income statement items.
 
     Args:
         record (Mapping[str, Any]): Normalized record.
         field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+        ticker (str | None): Ticker symbol for logging context.
+        period (date): Period for logging context.
 
     Returns:
         dict[str, float | None]: Income statement values.
@@ -355,6 +384,8 @@ def _build_income_items(
         "gross_costs",
         _calculate_gross_costs(revenue, gross_profit),
         gross_costs_reported,
+        ticker,
+        period,
     )
 
     depreciation = negative_value_of(*field_map["depreciation"])
@@ -373,6 +404,8 @@ def _build_income_items(
         "operating_income",
         _calculate_operating_income(gross_profit, depreciation, amortization, other_operating_expenses),
         operating_income_reported,
+        ticker,
+        period,
     )
 
     ebitda_reported = value_of("ebitda", "EBITDA")
@@ -380,6 +413,8 @@ def _build_income_items(
         "ebitda",
         _calculate_ebitda(operating_income, depreciation, amortization),
         ebitda_reported,
+        ticker,
+        period,
     )
 
     interest_income = value_of(*field_map["interest_income"])
@@ -401,6 +436,8 @@ def _build_income_items(
             other_non_operating,
         ),
         value_of(*field_map["pre_tax_income"]),
+        ticker,
+        period,
     )
 
     income_tax = negative_value_of(*field_map["income_tax"])
@@ -409,6 +446,8 @@ def _build_income_items(
         "net_income",
         _calculate_net_income(pre_tax_income, income_tax, affiliates_income),
         value_of(*field_map["net_income"]),
+        ticker,
+        period,
     )
 
     minorities_expense = negative_value_of(*field_map["minorities_expense"])
@@ -519,12 +558,16 @@ def _build_balance_items(
 def _build_cash_flow_items(
     record: Mapping[str, Any],
     field_map: Mapping[str, tuple[str, ...]],
+    ticker: str | None,
+    period: date,
 ) -> dict[str, float | None]:
     """Build normalized cash flow statement items.
 
     Args:
         record (Mapping[str, Any]): Normalized record.
         field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+        ticker (str | None): Ticker symbol for logging context.
+        period (date): Period for logging context.
 
     Returns:
         dict[str, float | None]: Cash flow statement values.
@@ -556,6 +599,8 @@ def _build_cash_flow_items(
             other_cfo,
         ),
         cfo_reported,
+        ticker,
+        period,
     )
 
     capex_fixed = negative_value_of(*field_map["capex_fixed"])
@@ -567,6 +612,8 @@ def _build_cash_flow_items(
         "cash_from_investing",
         _calculate_cash_from_investing(capex_fixed, capex_other, sale_ppe, other_cfi),
         cfi_reported,
+        ticker,
+        period,
     )
 
     dividends_paid = negative_value_of(*field_map["dividends_paid"])
@@ -591,6 +638,8 @@ def _build_cash_flow_items(
             other_cff,
         ),
         cff_reported,
+        ticker,
+        period,
     )
 
     change_in_cash = _calculate_change_in_cash(
@@ -604,6 +653,8 @@ def _build_cash_flow_items(
         "free_cash_flow",
         _calculate_free_cash_flow(cash_from_operations, capex_fixed, capex_other),
         free_cash_flow_reported,
+        ticker,
+        period,
     )
 
     return {
@@ -730,13 +781,21 @@ def _to_float(value: Any) -> float | None:
     return None
 
 
-def _checked_value(name: str, calculated: float | None, reported: float | None) -> float | None:
-    """Return a value if consistent; otherwise raise on mismatches.
+def _checked_value(
+    name: str,
+    calculated: float | None,
+    reported: float | None,
+    ticker: str | None,
+    period: date,
+) -> float | None:
+    """Return a value if consistent; otherwise log mismatches.
 
     Args:
         name (str): Field name for error messages.
         calculated (float | None): Computed value.
         reported (float | None): Reported value.
+        ticker (str | None): Ticker symbol for logging context.
+        period (date): Period for logging context.
 
     Returns:
         float | None: Value to use after consistency checks.
@@ -747,8 +806,10 @@ def _checked_value(name: str, calculated: float | None, reported: float | None) 
         return calculated
     if not isclose(calculated, reported, rel_tol=1e-4, abs_tol=1e-6):
         logger.info(
-            "%s mismatch: calculated=%s reported=%s",
+            "%s mismatch for %s %s: calculated=%s reported=%s",
             name,
+            ticker or "UNKNOWN",
+            period.isoformat(),
             calculated,
             reported,
         )
