@@ -26,6 +26,7 @@ from src.io.reporting import export_model_to_excel
 from src.io.storage import build_run_data_dir, save_raw_payload, save_share_data
 from src.logic.forecasting import generate_forecast
 from src.logic.historic_builder import build_historic_model
+from src.logic.validation import validate_eodhd_payload
 
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def get_tickers_needing_update() -> list[str]:
     return []
 
 
-def fetch_data(ticker: str) -> dict[str, Any]:
+def fetch_data(ticker: str) -> dict[str, Any] | None:
     """Fetch raw provider data for a ticker (network I/O happens here).
 
     Args:
@@ -62,15 +63,26 @@ def fetch_data(ticker: str) -> dict[str, Any]:
     if not api_key:
         raise ValueError("EODHD_API_KEY is not set")
     logger.info("Fetching fundamentals for %s", ticker)
-    response = requests.get(
-        f"https://eodhd.com/api/fundamentals/{ticker}",
-        params={"api_token": api_key, "fmt": "json"},
-        timeout=30,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/fundamentals/{ticker}",
+            params={"api_token": api_key, "fmt": "json"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("API request failed for %s: %s", ticker, exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode JSON for %s: %s", ticker, exc)
+        return None
     if not isinstance(payload, dict):
-        raise ValueError("EODHD response did not return a JSON object")
+        logger.info("EODHD response did not return a JSON object for %s", ticker)
+        return None
+    if any(key in payload for key in ("Error", "error", "message")) and "Financials" not in payload:
+        logger.info("EODHD error payload for %s: %s", ticker, payload)
+        return None
     logger.debug("Received fundamentals payload keys: %s", sorted(payload.keys()))
     return payload
 
@@ -102,9 +114,22 @@ def run_pipeline(results_dir: Path) -> None:
         # Pull raw data, then build a clean historical model.
         retrieval_date = datetime.utcnow()
         raw_data = fetch_data(ticker)
+        if raw_data is None:
+            logger.info("Skipping %s due to fetch error", ticker)
+            continue
+        warnings = validate_eodhd_payload(raw_data)
+        if warnings:
+            logger.info("Payload validation warnings for %s: %s", ticker, warnings)
+        if "Financials" not in raw_data:
+            logger.info("Skipping %s due to missing Financials section", ticker)
+            continue
         save_raw_payload(data_dir, ticker, raw_data)
         filing_dates = _extract_filing_dates(raw_data)
-        historic_model = build_historic_model(raw_data)
+        try:
+            historic_model = build_historic_model(raw_data)
+        except ValueError as exc:
+            logger.info("Skipping %s due to parsing error: %s", ticker, exc)
+            continue
         # Add a forecast using placeholder assumptions.
         forecast_model = generate_forecast(historic_model, assumptions)
         # Persist the result as JSON.

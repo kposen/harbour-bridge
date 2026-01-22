@@ -143,11 +143,14 @@ def _statement_frame(
     data = [_section_map(item, section) for item in items_list]
     keys = [key for key in order if any(key in mapping for mapping in data)]
     rows = {key: [mapping.get(key) for mapping in data] for key in keys}
-    frame = pd.DataFrame(rows, index=periods).transpose()
-    frame.index.name = "Line item"
     actual_flags = ["A" if idx < history_len else "F" for idx in range(len(periods))]
-    flag_row = pd.DataFrame([actual_flags], index=["Actual/Forecast"], columns=periods)
-    return pd.concat([flag_row, frame])
+    columns = pd.MultiIndex.from_arrays(
+        [actual_flags, periods],
+        names=["Actual/Forecast", "Date"],
+    )
+    frame = pd.DataFrame(rows, index=columns).transpose()
+    frame.index.name = "Line item"
+    return frame
 
 
 def _section_map(item: LineItems, section: str) -> dict[str, float | None]:
@@ -186,6 +189,6 @@ def _format_workbook(writer: pd.ExcelWriter, history_len: int) -> None:
             for cell in row:
                 cell.number_format = NUMBER_FORMAT
         # Left align line item descriptions.
-        for cell in sheet.iter_rows(min_row=2, max_col=1):
+        for cell in sheet.iter_rows(min_row=3, max_col=1):
             for item in cell:
                 item.alignment = item.alignment.copy(horizontal="left")

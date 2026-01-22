@@ -12,18 +12,23 @@ from src.logic.historic_builder import EODHD_FIELD_MAP
 
 logger = logging.getLogger(__name__)
 
-NEGATIVE_LINE_ITEMS = {
-    "gross_costs",
-    "depreciation",
-    "amortization",
-    "interest_expense",
-    "income_tax",
-    "minorities_expense",
-    "preferred_dividends",
-    "capex_fixed",
-    "capex_other",
-    "dividends_paid",
-    "share_purchases",
+STATEMENT_NEGATIVE_LINE_ITEMS = {
+    "income": {
+        "gross_costs",
+        "depreciation",
+        "amortization",
+        "interest_expense",
+        "income_tax",
+        "minorities_expense",
+        "preferred_dividends",
+    },
+    "cash_flow": {
+        "capex_fixed",
+        "capex_other",
+        "dividends_paid",
+        "share_purchases",
+    },
+    "balance": set(),
 }
 
 
@@ -60,8 +65,15 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     )
     with engine.begin() as conn:
         result = conn.execute(query, {"symbol": symbol}).scalar()
+    if isinstance(result, datetime):
+        return result.date()
     if isinstance(result, date):
         return result
+    if isinstance(result, str):
+        try:
+            return date.fromisoformat(result)
+        except ValueError:
+            return None
     return None
 
 
@@ -898,7 +910,8 @@ def _iter_reported_rows(
                     raw_value = _first_value(values, keys)
                     if raw_value is None:
                         continue
-                    value = -raw_value if line_item in NEGATIVE_LINE_ITEMS else raw_value
+                    negative_items = STATEMENT_NEGATIVE_LINE_ITEMS.get(statement, set())
+                    value = -raw_value if line_item in negative_items else raw_value
                     yield {
                         "symbol": symbol,
                         "fiscal_date": fiscal_date,

@@ -1,8 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- The current repository only contains `docs/` and a local `.venv/`.
-- Place application code under `src/` and tests under `tests/` once development begins.
+- Application code lives under `src/`, tests under `tests/`.
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
 
@@ -22,8 +21,7 @@
 - PyCharm users: enable built-in inspections and keep auto-formatting aligned to PEP 8.
 
 ## Testing Guidelines
-- No testing framework is set up yet.
-- If you add tests, prefer `pytest` with file names like `test_*.py` in `tests/`.
+- Use `pytest` with file names like `test_*.py` in `tests/`.
 - Test command: `pytest -q`.
 
 ## Static Analysis & Data Validation

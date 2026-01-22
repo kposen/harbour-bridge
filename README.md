@@ -27,9 +27,9 @@ shell.
    ```bash
    export EODHD_API_KEY="your_key_here"
    ```
-4. Run the pipeline:
+4. Run the pipeline (provide one or more tickers):
    ```bash
-   python main.py
+   python main.py AAPL.US
    ```
 
 ## Configuration
@@ -58,7 +58,7 @@ preserve versions and reported vs calculated values.
 
 ## Notes
 
-- Only annual financials are currently used.
+- Only annual financials are currently used for forecasting.
 - The pipeline always calls the network; caching will be added later.
 - The forecasting logic uses simple averages as a placeholder.
 

@@ -435,17 +435,17 @@ def _forecast_cash_flow(
         operating_working_capital_change = _scale(revenue, ratios["working_capital_ratio"])
     if non_operating_working_capital_change is None:
         non_operating_working_capital_change = 0.0
-    # Other CFO is treated as a residual plus non-operating WC change.
+    # Cash-flow D&A should be positive add-backs.
+    depreciation_cfs = _scale(depreciation, -1.0)
+    amortization_cfs = _scale(amortization, -1.0)
+    # Other CFO is treated as a revenue-based proxy.
     other_cfo = _scale(revenue, ratios["other_cfo_ratio"])
-    if other_cfo is not None:
-        other_cfo += non_operating_working_capital_change
-    else:
-        other_cfo = non_operating_working_capital_change
     cash_from_operations = _sum_optional(
         net_income,
-        depreciation,
-        amortization,
+        depreciation_cfs,
+        amortization_cfs,
         operating_working_capital_change,
+        non_operating_working_capital_change,
         other_cfo,
     )
 
@@ -474,12 +474,12 @@ def _forecast_cash_flow(
     # Change in cash reconciles three statement sections.
     change_in_cash = _sum_optional(cash_from_operations, cash_from_investing, cash_from_financing)
     free_cash_flow = _sum_optional(cash_from_operations, capex_fixed, capex_other)
-    forecast_dep_amort = _sum_optional(depreciation, amortization)
+    forecast_dep_amort = _sum_optional(depreciation_cfs, amortization_cfs)
 
     return {
         "net_income": net_income,
-        "depreciation": depreciation,
-        "amortization": amortization,
+        "depreciation": depreciation_cfs,
+        "amortization": amortization_cfs,
         "working_capital_change": operating_working_capital_change,
         "forecast_changes_non_operating_working_capital": non_operating_working_capital_change,
         "other_cfo": other_cfo,

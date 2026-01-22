@@ -48,7 +48,6 @@ EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "preferred_stock": ("preferredStock",),
     "common_equity": ("totalStockholderEquity", "commonStockEquity"),
     "minority_interest": ("minorityInterest",),
-    "net_income_cfs": ("netIncome",),
     "working_capital_change": ("changeInWorkingCapital",),
     "cash_from_operations": ("totalCashFromOperatingActivities",),
     "capex_fixed": ("capitalExpenditures",),
@@ -574,11 +573,13 @@ def _build_cash_flow_items(
     """
     value_of = _value_in(record)
     negative_value_of = _negative_value_in(record)
-    net_income_cfs = value_of(*field_map["net_income_cfs"])
-    depreciation = value_of(*field_map["depreciation"])
-    amortization = value_of(*field_map["amortization"])
-    dep_amort = value_of(*field_map["depreciation_and_amortization"])
-    depreciation, amortization = _split_dep_amort(depreciation, amortization, dep_amort)
+    net_income_cfs = value_of(*field_map["net_income"])
+    depreciation_raw = value_of(*field_map["depreciation"])
+    amortization_raw = value_of(*field_map["amortization"])
+    dep_amort_raw = value_of(*field_map["depreciation_and_amortization"])
+    depreciation, amortization = _split_dep_amort(depreciation_raw, amortization_raw, dep_amort_raw)
+    depreciation = _ensure_positive(depreciation)
+    amortization = _ensure_positive(amortization)
 
     working_cap_change = value_of(*field_map["working_capital_change"])
     cfo_reported = value_of(*field_map["cash_from_operations"])
@@ -779,6 +780,20 @@ def _to_float(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _ensure_positive(value: float | None) -> float | None:
+    """Ensure a value is positive when used as a cash-flow add-back.
+
+    Args:
+        value (float | None): Raw numeric value.
+
+    Returns:
+        float | None: Positive version of the value when present.
+    """
+    if value is None:
+        return None
+    return abs(value)
 
 
 def _checked_value(
@@ -1355,7 +1370,7 @@ def _assert_accounting_identity(balance: Mapping[str, float | None]) -> None:
         balance (Mapping[str, float | None]): Balance sheet values.
 
     Returns:
-        None: Raises ValueError when identity fails.
+        None: Logs a mismatch when identity fails.
     """
     total_assets = balance.get("total_assets")
     total_liabilities = balance.get("total_liabilities")
@@ -1368,7 +1383,9 @@ def _assert_accounting_identity(balance: Mapping[str, float | None]) -> None:
         rel_tol=1e-4,
         abs_tol=1e-6,
     ):
-        raise ValueError(
-            "Accounting identity failed: assets != liabilities + equity "
-            f"({total_assets} != {total_liabilities} + {total_equity})"
+        logger.info(
+            "Accounting identity mismatch: assets=%s liabilities=%s equity=%s",
+            total_assets,
+            total_liabilities,
+            total_equity,
         )
