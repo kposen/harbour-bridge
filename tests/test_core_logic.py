@@ -180,3 +180,110 @@ def test_forecast_does_not_mutate_history() -> None:
     generate_forecast(history, assumptions)
 
     assert history.model_dump() == before
+
+
+def test_historic_builder_preserves_sign_conventions() -> None:
+    """Income statement expenses should be negative; cash flow add-backs positive.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate sign handling.
+    """
+    raw_data = {
+        "Financials": {
+            "Income_Statement": {
+                "yearly": {
+                    "2025-12-31": {
+                        "totalRevenue": "100",
+                        "grossProfit": "40",
+                        "depreciation": "5",
+                        "amortization": "2",
+                        "operatingIncome": "20",
+                        "incomeBeforeTax": "18",
+                        "incomeTax": "4",
+                        "netIncome": "14",
+                    }
+                }
+            },
+            "Balance_Sheet": {
+                "yearly": {
+                    "2025-12-31": {
+                        "totalAssets": "100",
+                        "totalCurrentAssets": "40",
+                        "cashAndShortTermInvestments": "10",
+                        "inventory": "5",
+                        "netReceivables": "15",
+                        "totalLiab": "40",
+                        "totalStockholderEquity": "60",
+                    }
+                }
+            },
+            "Cash_Flow": {
+                "yearly": {
+                    "2025-12-31": {
+                        "netIncome": "14",
+                        "depreciation": "5",
+                        "amortization": "2",
+                        "totalCashFromOperatingActivities": "21",
+                    }
+                }
+            },
+        }
+    }
+    model = build_historic_model(raw_data)
+    item = model.history[0]
+    # Expenses should be negative on the income statement.
+    assert item.income["depreciation"] == -5.0
+    assert item.income["amortization"] == -2.0
+    # Cash flow add-backs should be positive.
+    assert item.cash_flow["depreciation"] == 5.0
+    assert item.cash_flow["amortization"] == 2.0
+    assert item.cash_flow["net_income"] == 14.0
+
+
+def test_forecast_working_capital_change_is_negative_on_increase() -> None:
+    """Working capital increases should produce negative cash flow impacts.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate working capital sign.
+    """
+    history = FinancialModel(
+        history=[
+            LineItems(
+                period=date(2024, 12, 31),
+                income={"revenue": 100.0, "net_income": 10.0, "net_income_common": 10.0},
+                balance={
+                    "inventory": 10.0,
+                    "receivables": 20.0,
+                    "accounts_payable": 5.0,
+                    "cash_short_term_investments": 10.0,
+                    "current_assets": 40.0,
+                    "total_assets": 100.0,
+                    "total_liabilities": 40.0,
+                    "total_equity": 60.0,
+                },
+                cash_flow={"net_income": 10.0},
+            )
+        ],
+        forecast=[],
+    )
+    # Force growth in inventory/receivables so WC increases.
+    assumptions = Assumptions(
+        growth_rates={
+            "forecast_years": 1,
+            "inventory": 0.1,
+            "receivables": 0.1,
+            "accounts_payable": 0.0,
+        },
+        margins={},
+    )
+    forecast_model = generate_forecast(history, assumptions)
+    wc_change = forecast_model.forecast[0].cash_flow.get("working_capital_change")
+    # Increase in WC should show as a negative cash flow.
+    assert wc_change is not None
+    assert wc_change < 0

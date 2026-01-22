@@ -104,3 +104,20 @@ CREATE TABLE listings (
 
 CREATE INDEX IX_listings_primary_ticker
     ON listings (primary_ticker, retrieval_date);
+
+CREATE TABLE prices (
+    symbol TEXT NOT NULL,
+    date TEXT NOT NULL,
+    retrieval_date TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    open REAL NULL,
+    high REAL NULL,
+    low REAL NULL,
+    close REAL NULL,
+    adjusted_close REAL NULL,
+    volume REAL NULL,
+    PRIMARY KEY (symbol, date, retrieval_date, provider)
+);
+
+CREATE INDEX IX_prices_symbol_date
+    ON prices (symbol, date);

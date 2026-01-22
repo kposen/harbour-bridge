@@ -15,16 +15,23 @@ from src.io.database import (
     ensure_schema,
     get_engine,
     get_latest_filing_date,
+    get_latest_price_date,
     write_holders,
     write_financial_facts,
     write_earnings,
     write_insider_transactions,
     write_listings,
     write_market_metrics,
+    write_prices,
     write_reported_facts,
 )
 from src.io.reporting import export_model_to_excel
-from src.io.storage import build_run_data_dir, save_raw_payload, save_share_data
+from src.io.storage import (
+    build_run_data_dir,
+    save_price_payload,
+    save_raw_payload,
+    save_share_data,
+)
 from src.logic.forecasting import generate_forecast
 from src.logic.historic_builder import build_historic_model
 from src.logic.validation import validate_eodhd_payload
@@ -88,6 +95,46 @@ def fetch_data(ticker: str) -> dict[str, Any] | None:
     return payload
 
 
+def fetch_prices(ticker: str, start_date: date | None) -> object | None:
+    """Fetch end-of-day prices for a ticker (network I/O happens here).
+
+    Args:
+        ticker (str): The ticker symbol to fetch.
+        start_date (date | None): Start date for the request, or None for full history.
+
+    Returns:
+        object | None: Raw provider payload for prices, or None on error.
+    """
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    params: dict[str, str] = {"api_token": api_key, "fmt": "json"}
+    if start_date is not None:
+        params["from"] = start_date.isoformat()
+    logger.info("Fetching prices for %s", ticker)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/eod/{ticker}",
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("Price API request failed for %s: %s", ticker, exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode price JSON for %s: %s", ticker, exc)
+        return None
+    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+        logger.info("EODHD price error payload for %s: %s", ticker, payload)
+        return None
+    if not isinstance(payload, (list, dict)):
+        logger.info("EODHD prices response did not return JSON rows for %s", ticker)
+        return None
+    return payload
+
+
 def run_pipeline(results_dir: Path) -> None:
     """Run the imperative pipeline: fetch -> build history -> forecast -> save.
 
@@ -110,10 +157,23 @@ def run_pipeline(results_dir: Path) -> None:
         ensure_schema(engine)
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
+    provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
         # Pull raw data, then build a clean historical model.
         retrieval_date = datetime.utcnow()
+        price_start = _price_start_date(engine, ticker, provider)
+        price_payload = fetch_prices(ticker, price_start)
+        if price_payload is not None:
+            save_price_payload(data_dir, ticker, price_payload)
+            if engine is not None:
+                write_prices(
+                    engine=engine,
+                    symbol=ticker,
+                    provider=provider,
+                    retrieval_date=retrieval_date,
+                    raw_data=price_payload,
+                )
         raw_data = fetch_data(ticker)
         if raw_data is None:
             logger.info("Skipping %s due to fetch error", ticker)
@@ -171,14 +231,14 @@ def run_pipeline(results_dir: Path) -> None:
             write_reported_facts(
                 engine=engine,
                 symbol=ticker,
-                provider="EODHD",
+                provider=provider,
                 retrieval_date=retrieval_date,
                 raw_data=raw_data,
             )
             write_financial_facts(
                 engine=engine,
                 symbol=ticker,
-                provider="EODHD",
+                provider=provider,
                 retrieval_date=retrieval_date,
                 model=forecast_model,
                 filing_dates=filing_dates,
@@ -243,6 +303,22 @@ def _should_update(ticker: str, engine, cutoff: date) -> bool:
         logger.info("Filing date for %s is older than %s; scheduling update", ticker, cutoff)
         return True
     return False
+
+
+def _price_start_date(engine, ticker: str, provider: str) -> date | None:
+    """Return the start date for price downloads.
+
+    Args:
+        engine (Engine | None): SQL engine when available.
+        ticker (str): Ticker symbol to query.
+        provider (str): Provider name (e.g., "EODHD").
+
+    Returns:
+        date | None: Latest stored price date, or None for full history.
+    """
+    if engine is None:
+        return None
+    return get_latest_price_date(engine, ticker, provider)
 
 
 def _months_ago(current: date, months: int) -> date:

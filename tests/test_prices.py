@@ -1,0 +1,335 @@
+from __future__ import annotations
+
+"""Tests for end-of-day price ingestion and storage."""
+
+from datetime import date, datetime
+from typing import Any
+
+from sqlalchemy import create_engine, text
+
+import main
+from src.io.database import (
+    _iter_price_rows,
+    ensure_schema,
+    get_latest_price_date,
+    write_prices,
+)
+from src.io.storage import save_price_payload
+
+
+def _price_entry(
+    date_str: str,
+    open_value: str = "10",
+    high_value: str = "12",
+    low_value: str = "9",
+    close_value: str = "11",
+    adjusted_close_value: str = "10.5",
+    volume_value: str = "1000",
+) -> dict[str, Any]:
+    """Build a minimal price entry payload.
+
+    Args:
+        date_str (str): ISO date string for the entry.
+        open_value (str): Open price value.
+        high_value (str): High price value.
+        low_value (str): Low price value.
+        close_value (str): Close price value.
+        adjusted_close_value (str): Adjusted close value.
+        volume_value (str): Volume value.
+
+    Returns:
+        dict[str, Any]: Price entry payload.
+    """
+    return {
+        "date": date_str,
+        "open": open_value,
+        "high": high_value,
+        "low": low_value,
+        "close": close_value,
+        "adjusted_close": adjusted_close_value,
+        "volume": volume_value,
+    }
+
+
+def test_get_latest_price_date_parses_sqlite_text() -> None:
+    """Latest price date should parse from SQLite text columns.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate parsing behavior.
+    """
+    engine = create_engine("sqlite:///:memory:", future=True)
+    ensure_schema(engine)
+    # Insert two dates and ensure the latest is returned.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO prices (
+                    symbol,
+                    date,
+                    retrieval_date,
+                    provider,
+                    open,
+                    high,
+                    low,
+                    close,
+                    adjusted_close,
+                    volume
+                )
+                VALUES (
+                    :symbol,
+                    :date,
+                    :retrieval_date,
+                    :provider,
+                    :open,
+                    :high,
+                    :low,
+                    :close,
+                    :adjusted_close,
+                    :volume
+                )
+                """
+            ),
+            [
+                {
+                    "symbol": "AAPL.US",
+                    "date": "2025-01-01",
+                    "retrieval_date": "2025-01-02T00:00:00",
+                    "provider": "EODHD",
+                    "open": 10.0,
+                    "high": 12.0,
+                    "low": 9.0,
+                    "close": 11.0,
+                    "adjusted_close": 10.5,
+                    "volume": 1000.0,
+                },
+                {
+                    "symbol": "AAPL.US",
+                    "date": "2025-02-01",
+                    "retrieval_date": "2025-02-02T00:00:00",
+                    "provider": "EODHD",
+                    "open": 20.0,
+                    "high": 21.0,
+                    "low": 19.0,
+                    "close": 20.5,
+                    "adjusted_close": 20.4,
+                    "volume": 2000.0,
+                },
+            ],
+        )
+    latest = get_latest_price_date(engine, "AAPL.US", "EODHD")
+    assert latest == date(2025, 2, 1)
+
+
+def test_write_prices_dedups_identical_versions() -> None:
+    """Duplicate price payloads should be deduped by value.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate versioning behavior.
+    """
+    engine = create_engine("sqlite:///:memory:", future=True)
+    ensure_schema(engine)
+    payload = [_price_entry("2025-01-01")]
+
+    first = write_prices(
+        engine=engine,
+        symbol="AAPL.US",
+        provider="EODHD",
+        retrieval_date=datetime(2025, 2, 1),
+        raw_data=payload,
+    )
+    second = write_prices(
+        engine=engine,
+        symbol="AAPL.US",
+        provider="EODHD",
+        retrieval_date=datetime(2025, 2, 2),
+        raw_data=payload,
+    )
+
+    # The second insert should be skipped because values are identical.
+    with engine.begin() as conn:
+        count = conn.execute(text("SELECT COUNT(*) FROM prices")).scalar()
+    assert first == 1
+    assert second == 0
+    assert count == 1
+
+
+def test_write_prices_inserts_on_value_change() -> None:
+    """Changed values should insert a new version.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate versioning behavior.
+    """
+    engine = create_engine("sqlite:///:memory:", future=True)
+    ensure_schema(engine)
+    payload = [_price_entry("2025-01-01", close_value="11")]
+    write_prices(
+        engine=engine,
+        symbol="AAPL.US",
+        provider="EODHD",
+        retrieval_date=datetime(2025, 2, 1),
+        raw_data=payload,
+    )
+    updated_payload = [_price_entry("2025-01-01", close_value="11.5")]
+    inserted = write_prices(
+        engine=engine,
+        symbol="AAPL.US",
+        provider="EODHD",
+        retrieval_date=datetime(2025, 2, 2),
+        raw_data=updated_payload,
+    )
+
+    # Only the changed row should insert as a new version.
+    with engine.begin() as conn:
+        count = conn.execute(text("SELECT COUNT(*) FROM prices")).scalar()
+    assert inserted == 1
+    assert count == 2
+
+
+def test_iter_price_rows_accepts_mapping_payload() -> None:
+    """Mapping payloads should be parsed into price rows.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate payload parsing.
+    """
+    payload = {
+        "0": _price_entry("2025-01-01"),
+        "1": _price_entry("2025-01-02", close_value="12"),
+    }
+    rows = list(
+        _iter_price_rows(
+            symbol="AAPL.US",
+            provider="EODHD",
+            retrieval_date=datetime(2025, 2, 1),
+            raw_data=payload,
+        )
+    )
+    # Ensure both entries are parsed and dates are preserved.
+    dates = {row["date"] for row in rows}
+    assert dates == {"2025-01-01", "2025-01-02"}
+
+
+def test_fetch_prices_uses_from_param(monkeypatch) -> None:
+    """Fetch should include 'from' only when a start date is provided.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Pytest monkeypatch fixture.
+
+    Returns:
+        None: Assertions validate request parameter behavior.
+    """
+    monkeypatch.setenv("EODHD_API_KEY", "test-key")
+    captured: dict[str, Any] = {}
+
+    class DummyResponse:
+        """Lightweight response stub for request mocking."""
+
+        def __init__(self, payload: object) -> None:
+            """Create a dummy response wrapper.
+
+            Args:
+                payload (object): Payload to return from json().
+
+            Returns:
+                None
+            """
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            """No-op status check for the dummy response.
+
+            Args:
+                None
+
+            Returns:
+                None
+            """
+
+        def json(self) -> object:
+            """Return the payload for the dummy response.
+
+            Args:
+                None
+
+            Returns:
+                object: Payload for the response.
+            """
+            return self._payload
+
+    def fake_get(url: str, params: dict[str, str], timeout: int) -> DummyResponse:
+        """Capture request arguments and return a dummy response.
+
+        Args:
+            url (str): URL requested by the client.
+            params (dict[str, str]): Request parameters.
+            timeout (int): Timeout used for the request.
+
+        Returns:
+            DummyResponse: Stubbed response payload.
+        """
+        captured["url"] = url
+        captured["params"] = dict(params)
+        captured["timeout"] = timeout
+        return DummyResponse([])
+
+    monkeypatch.setattr(main.requests, "get", fake_get)
+
+    # Without a start date, we should not include "from".
+    payload = main.fetch_prices("AAPL.US", None)
+    assert payload == []
+    assert "from" not in captured["params"]
+
+    # With a start date, include "from".
+    start = date(2025, 1, 15)
+    payload = main.fetch_prices("AAPL.US", start)
+    assert payload == []
+    assert captured["params"].get("from") == "2025-01-15"
+
+
+def test_save_price_payload_writes_expected_file(tmp_path) -> None:
+    """Price payloads should be written with the expected filename.
+
+    Args:
+        tmp_path (Path): Pytest temporary directory fixture.
+
+    Returns:
+        None: Assertions validate filesystem writes.
+    """
+    payload = [_price_entry("2025-01-01")]
+    path = save_price_payload(tmp_path, "AAPL.US", payload)
+    assert path.name == "AAPL.US.prices.json"
+    assert path.exists()
+
+
+def test_price_start_date_uses_latest_date() -> None:
+    """Price start date should use the latest stored date.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate start-date selection.
+    """
+    engine = create_engine("sqlite:///:memory:", future=True)
+    ensure_schema(engine)
+    write_prices(
+        engine=engine,
+        symbol="AAPL.US",
+        provider="EODHD",
+        retrieval_date=datetime(2025, 2, 1),
+        raw_data=[_price_entry("2025-01-01")],
+    )
+    start_date = main._price_start_date(engine, "AAPL.US", "EODHD")
+    assert start_date == date(2025, 1, 1)

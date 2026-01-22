@@ -44,20 +44,23 @@ shell.
 ## Data Flow
 
 1. **Fetch**: `fetch_data` calls the EODHD fundamentals endpoint.
+2. **Fetch prices**: `fetch_prices` calls the EODHD end-of-day endpoint and stores raw payloads.
 2. **Normalize**: `build_historic_model` converts provider fields into
    `LineItems` using an external mapping (`EODHD_FIELD_MAP`).
 3. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
 4. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
 5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
-6. **Raw payloads**: Stored under `data/<timestamp>` for each run.
+6. **Raw payloads**: Stored under `data/<timestamp>` for each run, including `*.prices.json`.
 
 ## Database Storage (Optional)
 
 If you want to persist normalized facts to SQLite, apply the schema in
 `docs/sql/schema.sql` and use the helpers in `src/io/database.py` to insert rows
-into `financial_facts`. The primary key includes symbol, fiscal date, filing
-date, retrieval date, period type, statement, line item, and value source to
-preserve versions and reported vs calculated values.
+into `financial_facts` and `prices`. The primary key for `financial_facts`
+includes symbol, fiscal date, filing date, retrieval date, period type,
+statement, line item, and value source to preserve versions and reported vs
+calculated values. The primary key for `prices` includes symbol, date,
+retrieval_date, and provider for versioned price history.
 
 ## Notes
 

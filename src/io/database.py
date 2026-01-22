@@ -37,6 +37,15 @@ STATEMENT_NEGATIVE_LINE_ITEMS = {
     "balance": set(),
 }
 
+PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    "open": ("open",),
+    "high": ("high",),
+    "low": ("low",),
+    "close": ("close",),
+    "adjusted_close": ("adjusted_close", "adjustedClose", "adj_close", "adjClose"),
+    "volume": ("volume",),
+}
+
 RETRIEVAL_COLUMN = "retrieval_date"
 
 
@@ -84,6 +93,30 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
         except ValueError:
             return None
     return None
+
+
+def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | None:
+    """Fetch the most recent price date for a symbol/provider pair.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol to query.
+        provider (str): Provider name (e.g., "EODHD").
+
+    Returns:
+        date | None: Latest price date or None if missing.
+    """
+    query = text(
+        """
+        SELECT MAX(date) AS latest_date
+        FROM prices
+        WHERE symbol = :symbol
+          AND provider = :provider
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(query, {"symbol": symbol, "provider": provider}).scalar()
+    return _parse_date(result)
 
 
 def ensure_schema(engine: Engine) -> None:
@@ -189,6 +222,21 @@ def ensure_schema(engine: Engine) -> None:
     );
     CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
         ON listings (primary_ticker, retrieval_date);
+    CREATE TABLE IF NOT EXISTS prices (
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        open REAL NULL,
+        high REAL NULL,
+        low REAL NULL,
+        close REAL NULL,
+        adjusted_close REAL NULL,
+        volume REAL NULL,
+        PRIMARY KEY (symbol, date, retrieval_date, provider)
+    );
+    CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
+        ON prices (symbol, date);
     """
     with engine.begin() as conn:
         for statement in (stmt.strip() for stmt in schema_sql.split(";")):
@@ -249,6 +297,71 @@ def write_market_metrics(
         if not rows_to_insert:
             return 0
         logger.info("Writing %d market metrics for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
+
+
+def write_prices(
+    engine: Engine,
+    symbol: str,
+    provider: str,
+    retrieval_date: datetime,
+    raw_data: object,
+) -> int:
+    """Write end-of-day price rows into the prices table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for SQLite.
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (object): Raw provider payload for prices.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = list(_iter_price_rows(symbol, provider, retrieval_date, raw_data))
+    if not rows:
+        return 0
+    insert_sql = text(
+        """
+        INSERT INTO prices (
+            symbol,
+            date,
+            retrieval_date,
+            provider,
+            open,
+            high,
+            low,
+            close,
+            adjusted_close,
+            volume
+        )
+        VALUES (
+            :symbol,
+            :date,
+            :retrieval_date,
+            :provider,
+            :open,
+            :high,
+            :low,
+            :close,
+            :adjusted_close,
+            :volume
+        )
+        """
+    )
+    match_columns = ("symbol", "date", "provider")
+    with engine.begin() as conn:
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="prices",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d price rows for %s", len(rows_to_insert), symbol)
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
 
@@ -798,6 +911,61 @@ def _iter_market_metrics(
         return _market_section_rows(symbol, retrieval_stamp, section, raw_data.get(section))
 
     return mapcat(section_rows, sections)
+
+
+def _iter_price_rows(
+    symbol: str,
+    provider: str,
+    retrieval_date: datetime,
+    raw_data: object,
+) -> Iterable[dict[str, object]]:
+    """Yield price rows from an EODHD end-of-day payload.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_date (datetime): When the payload was retrieved.
+        raw_data (object): Raw provider payload for prices.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    retrieval_stamp = retrieval_date.isoformat()
+    base = {
+        "symbol": symbol,
+        "retrieval_date": retrieval_stamp,
+        "provider": provider,
+    }
+    return [
+        {
+            **base,
+            "date": price_date.isoformat(),
+            **{
+                field: _first_value(entry, keys)
+                for field, keys in PRICE_FIELD_MAP.items()
+            },
+        }
+        for entry in _price_entries(raw_data)
+        if isinstance(entry, Mapping)
+        for price_date in [_parse_date(entry.get("date"))]
+        if price_date is not None
+    ]
+
+
+def _price_entries(raw_data: object) -> Iterable[Mapping[str, object]]:
+    """Normalize price payloads into an iterable of entry mappings.
+
+    Args:
+        raw_data (object): Raw price payload.
+
+    Returns:
+        Iterable[Mapping[str, object]]: Iterable of entry mappings.
+    """
+    if isinstance(raw_data, list):
+        return raw_data
+    if isinstance(raw_data, Mapping):
+        return raw_data.values()
+    return []
 
 
 def _market_section_rows(

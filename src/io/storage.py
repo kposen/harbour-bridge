@@ -99,6 +99,24 @@ def save_raw_payload(run_dir: Path, ticker: str, payload: dict[str, object]) -> 
     return path
 
 
+def save_price_payload(run_dir: Path, ticker: str, payload: object) -> Path:
+    """Persist the raw price payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        ticker (str): Ticker symbol for the payload.
+        payload (object): Raw provider payload for prices.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    normalized = _normalize_ticker(ticker)
+    path = run_dir / f"{normalized}.prices.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved price payload to %s", path)
+    return path
+
+
 def _normalize_ticker(ticker: str) -> str:
     """Normalize ticker symbols for consistent filenames.
 
