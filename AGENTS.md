@@ -5,7 +5,8 @@
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
 - Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
-- Raw payloads are stored under `data/<yyyymmdd-hhmmss>`; normalized JSON models are stored under `data/<TICKER>.json`.
+- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json` and `*.prices.json`.
+- Normalized JSON models are stored under `data/<TICKER>.json`.
 
 ## Build, Test, and Development Commands
 - `python -m venv .venv` creates the local virtual environment.
@@ -19,6 +20,7 @@
 
 ## Coding Style & Naming Conventions
 - Target Python 3.12+ and use strict type hinting throughout the codebase.
+- Stongly prefer heavy functional programming style. Always use FP style unless it materially impairs readability. Use native libraries as well as 'toolz' and 'more-itertools'.
 - Use 4-space indentation and standard Python conventions (PEP 8).
 - Prefer clear module names such as `forecasting.py`, `valuation.py`, and `portfolio.py`.
 - If you add formatting or linting, document the tool and command here (e.g., `ruff format`, `black`).

@@ -93,7 +93,7 @@ def save_raw_payload(run_dir: Path, ticker: str, payload: dict[str, object]) -> 
         Path: Path to the saved JSON payload.
     """
     normalized = _normalize_ticker(ticker)
-    path = run_dir / f"{normalized}.json"
+    path = run_dir / f"{normalized}.fundamentals.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug("Saved raw payload to %s", path)
     return path
