@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -147,6 +147,11 @@ def run_pipeline(results_dir: Path) -> None:
     # Keep assumptions in the shell so logic modules stay pure.
     assumptions = Assumptions(growth_rates={}, margins={})
     tickers = get_tickers_needing_update()
+    if tickers:
+        logger.info("Loaded %d tickers to evaluate", len(tickers))
+        logger.debug("Candidate tickers: %s", tickers)
+    else:
+        logger.info("No tickers provided; pipeline will exit after setup")
     data_dir = build_run_data_dir(results_dir.name)
     logger.info("Created data directory: %s", data_dir)
     db_path = os.getenv("SQLITE_DB_PATH")
@@ -154,17 +159,37 @@ def run_pipeline(results_dir: Path) -> None:
     if engine is None:
         logger.info("SQLITE_DB_PATH not set; skipping database writes")
     else:
+        logger.info("Using SQLite database at %s", db_path)
         ensure_schema(engine)
     tickers_to_process = _filter_stale_tickers(tickers, engine)
+    if not tickers_to_process:
+        logger.info("No tickers scheduled for update; pipeline complete")
+        return
     logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
+    logger.debug("Tickers scheduled for update: %s", tickers_to_process)
     provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
         # Pull raw data, then build a clean historical model.
-        retrieval_date = datetime.utcnow()
+        retrieval_date = datetime.now(UTC)
         price_start = _price_start_date(engine, ticker, provider)
+        if price_start is None:
+            logger.debug("No stored price history for %s; fetching full history", ticker)
+        else:
+            logger.debug("Fetching prices for %s starting from %s", ticker, price_start)
         price_payload = fetch_prices(ticker, price_start)
         if price_payload is not None:
+            if isinstance(price_payload, list):
+                if not price_payload:
+                    logger.info("No new price data returned for %s", ticker)
+                else:
+                    logger.debug("Received %d price rows for %s", len(price_payload), ticker)
+            elif isinstance(price_payload, dict):
+                logger.debug(
+                    "Received price payload keys for %s: %s",
+                    ticker,
+                    list(price_payload.keys()),
+                )
             save_price_payload(data_dir, ticker, price_payload)
             if engine is not None:
                 write_prices(
@@ -174,6 +199,8 @@ def run_pipeline(results_dir: Path) -> None:
                     retrieval_date=retrieval_date,
                     raw_data=price_payload,
                 )
+        else:
+            logger.info("Skipping price persistence for %s due to fetch error", ticker)
         raw_data = fetch_data(ticker)
         if raw_data is None:
             logger.info("Skipping %s due to fetch error", ticker)
@@ -186,6 +213,7 @@ def run_pipeline(results_dir: Path) -> None:
             continue
         save_raw_payload(data_dir, ticker, raw_data)
         filing_dates = _extract_filing_dates(raw_data)
+        logger.debug("Extracted %d filing dates for %s", len(filing_dates), ticker)
         try:
             historic_model = build_historic_model(raw_data)
         except ValueError as exc:
@@ -196,7 +224,9 @@ def run_pipeline(results_dir: Path) -> None:
         # Persist the result as JSON.
         save_share_data(ticker, forecast_model)
         # Write an Excel workbook for each share.
-        export_model_to_excel(forecast_model, results_dir / f"{ticker}.xlsx")
+        report_path = results_dir / f"{ticker}.xlsx"
+        export_model_to_excel(forecast_model, report_path)
+        logger.info("Wrote report to %s", report_path)
         # Persist to SQLite when configured.
         if engine is not None:
             write_market_metrics(
@@ -248,17 +278,34 @@ def run_pipeline(results_dir: Path) -> None:
     logger.info("Pipeline complete")
 
 
-def _build_results_dir() -> Path:
-    """Create a timestamped results directory for the current run.
+def _ensure_base_directories() -> tuple[Path, Path, bool, bool]:
+    """Ensure the root data/results directories exist.
 
     Args:
         None
 
     Returns:
-        Path: Directory path for this run's outputs.
+        tuple[Path, Path, bool, bool]: Data path, results path, and creation flags.
     """
     root = Path(__file__).resolve().parent
+    data_root = root / "data"
     results_root = root / "results"
+    data_created = not data_root.exists()
+    results_created = not results_root.exists()
+    data_root.mkdir(parents=True, exist_ok=True)
+    results_root.mkdir(parents=True, exist_ok=True)
+    return data_root, results_root, data_created, results_created
+
+
+def _build_results_dir(results_root: Path) -> Path:
+    """Create a timestamped results directory for the current run.
+
+    Args:
+        results_root (Path): Base directory for run outputs.
+
+    Returns:
+        Path: Directory path for this run's outputs.
+    """
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = results_root / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -276,12 +323,27 @@ def _filter_stale_tickers(tickers: list[str], engine) -> list[str]:
     Returns:
         list[str]: Tickers requiring refresh.
     """
+    if not tickers:
+        logger.info("No tickers supplied for staleness check")
+        return []
     if engine is None:
+        logger.info("No database configured; skipping staleness check for %d tickers", len(tickers))
         return tickers
-    today = datetime.utcnow().date()
+    today = datetime.now(UTC).date()
     cutoff = _months_ago(today, 3)
+    logger.debug("Using staleness cutoff date: %s", cutoff)
     should_update = partial(_should_update, engine=engine, cutoff=cutoff)
-    return [ticker for ticker in tickers if should_update(ticker)]
+    stale_tickers = [ticker for ticker in tickers if should_update(ticker)]
+    logger.info(
+        "Staleness check complete: %d of %d tickers need updates",
+        len(stale_tickers),
+        len(tickers),
+    )
+    if not stale_tickers:
+        logger.info("All tickers are up to date; nothing to download")
+    else:
+        logger.debug("Tickers scheduled for update: %s", stale_tickers)
+    return stale_tickers
 
 
 def _should_update(ticker: str, engine, cutoff: date) -> bool:
@@ -302,6 +364,7 @@ def _should_update(ticker: str, engine, cutoff: date) -> bool:
     if latest_filing <= cutoff:
         logger.info("Filing date for %s is older than %s; scheduling update", ticker, cutoff)
         return True
+    logger.debug("Filing date for %s is current (%s); skipping update", ticker, latest_filing)
     return False
 
 
@@ -404,7 +467,8 @@ def _parse_date(value: object) -> date | None:
 
 
 if __name__ == "__main__":
-    results_dir = _build_results_dir()
+    data_root, results_root, data_created, results_created = _ensure_base_directories()
+    results_dir = _build_results_dir(results_root)
     log_path = results_dir / "run.log"
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -417,4 +481,13 @@ if __name__ == "__main__":
     file_handler.setFormatter(formatter)
 
     logging.basicConfig(level=logging.DEBUG, handlers=[console_handler, file_handler])
+    if data_created:
+        logger.info("Created data directory: %s", data_root)
+    else:
+        logger.info("Using existing data directory: %s", data_root)
+    if results_created:
+        logger.info("Created results directory: %s", results_root)
+    else:
+        logger.info("Using existing results directory: %s", results_root)
+    logger.info("Run output directory: %s", results_dir)
     run_pipeline(results_dir)
