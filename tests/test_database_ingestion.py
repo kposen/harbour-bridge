@@ -76,6 +76,14 @@ def test_staleness_logic_with_sqlite_dates() -> None:
 
         @classmethod
         def utcnow(cls) -> datetime:
+            """Return a fixed datetime for deterministic tests.
+
+            Args:
+                cls (type[FixedDatetime]): Class reference for the method.
+
+            Returns:
+                datetime: Fixed UTC datetime for staleness logic.
+            """
             return datetime(2025, 5, 1)
 
     original_datetime = main.datetime

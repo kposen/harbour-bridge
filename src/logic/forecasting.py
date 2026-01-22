@@ -41,6 +41,15 @@ def generate_forecast(history: FinancialModel, assumptions: Assumptions) -> Fina
     balance_growth = _build_balance_growth_rates(historic_items, assumptions)
 
     def step(items: list[LineItems], _: int) -> list[LineItems]:
+        """Append one forecast period based on the prior period.
+
+        Args:
+            items (list[LineItems]): Accumulated history plus forecast items.
+            _ (int): Placeholder for the reduction index.
+
+        Returns:
+            list[LineItems]: Updated list including the next forecast item.
+        """
         # Each forecast period depends on the prior period.
         next_item = _forecast_next_year(items[-1], ratios, growth, balance_growth)
         return [*items, next_item]

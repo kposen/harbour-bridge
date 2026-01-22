@@ -22,6 +22,14 @@ class Statement(BaseModel):
 
     @model_validator(mode="after")
     def _validate_line_lengths(self) -> "Statement":
+        """Validate that all lines match the periods length.
+
+        Args:
+            self (Statement): The model instance being validated.
+
+        Returns:
+            Statement: The validated model instance.
+        """
         expected = len(self.periods)
         for line in self.lines:
             if len(line.values) != expected:

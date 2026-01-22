@@ -177,14 +177,14 @@ def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]
     balance = _eodhd_statement_yearly(financials, "Balance_Sheet")
     cashflow = _eodhd_statement_yearly(financials, "Cash_Flow")
 
-    # Merge three statements by date into a unified record.
+    # Keep statements separate to avoid cross-statement key collisions.
     dates = sorted(set(income) | set(balance) | set(cashflow))
     records = [
         {
             "date": period,
-            **income.get(period, {}),
-            **balance.get(period, {}),
-            **cashflow.get(period, {}),
+            "income": dict(income.get(period, {})),
+            "balance": dict(balance.get(period, {})),
+            "cash_flow": dict(cashflow.get(period, {})),
         }
         for period in dates
     ]
@@ -260,7 +260,15 @@ def _attach_shares(
             continue
         # Match by exact date, then by same-year fallback.
         shares = _lookup_shares(shares_by_date, period)
-        if shares is not None and "dilutedSharesOutstanding" not in record:
+        if shares is None:
+            continue
+        income_record = record.get("income")
+        if isinstance(income_record, Mapping):
+            if "dilutedSharesOutstanding" not in income_record:
+                record["income"] = {**dict(income_record), "dilutedSharesOutstanding": shares}
+                attached += 1
+            continue
+        if "dilutedSharesOutstanding" not in record:
             record["dilutedSharesOutstanding"] = shares
             attached += 1
     logger.debug("Attached shares to %d records", attached)
@@ -346,9 +354,12 @@ def _build_line_items(
         raise ValueError("record date is missing or invalid")
 
     # Build statements independently, then validate accounting identity.
-    income = _build_income_items(record, field_map, ticker, period)
-    balance = _build_balance_items(record, field_map)
-    cash_flow = _build_cash_flow_items(record, field_map, ticker, period)
+    income_record = _statement_slice(record, "income")
+    balance_record = _statement_slice(record, "balance")
+    cash_flow_record = _statement_slice(record, "cash_flow")
+    income = _build_income_items(income_record, field_map, ticker, period)
+    balance = _build_balance_items(balance_record, field_map)
+    cash_flow = _build_cash_flow_items(cash_flow_record, field_map, ticker, period)
 
     _assert_accounting_identity(balance)
 
@@ -700,6 +711,22 @@ def _parse_date(value: Any) -> date | None:
         except ValueError:
             return None
     return None
+
+
+def _statement_slice(record: Mapping[str, Any], section: str) -> Mapping[str, Any]:
+    """Return the statement-specific slice of a record when present.
+
+    Args:
+        record (Mapping[str, Any]): Raw or normalized record.
+        section (str): Statement key ("income", "balance", "cash_flow").
+
+    Returns:
+        Mapping[str, Any]: Statement-specific mapping or the full record.
+    """
+    candidate = record.get(section)
+    if isinstance(candidate, Mapping):
+        return candidate
+    return record
 
 
 def _value(record: Mapping[str, Any], *keys: str) -> float | None:

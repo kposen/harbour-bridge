@@ -4,6 +4,8 @@
 - Application code lives under `src/`, tests under `tests/`.
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
+- Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
+- Raw payloads are stored under `data/<yyyymmdd-hhmmss>`; normalized JSON models are stored under `data/<TICKER>.json`.
 
 ## Build, Test, and Development Commands
 - `python -m venv .venv` creates the local virtual environment.
@@ -12,6 +14,7 @@
 - `pip install pandas requests pydantic mypy openpyxl` installs the current runtime dependencies and type checker.
 - `python -m src.app` runs the main module when it is introduced.
 - Run pipeline: `python main.py` (requires `EODHD_API_KEY`).
+- Optional SQLite persistence via `SQLITE_DB_PATH`.
 
 ## Coding Style & Naming Conventions
 - Target Python 3.12+ and use strict type hinting throughout the codebase.

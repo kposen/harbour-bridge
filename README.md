@@ -47,6 +47,8 @@ shell.
    `LineItems` using an external mapping (`EODHD_FIELD_MAP`).
 3. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
 4. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
+5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
+6. **Raw payloads**: Stored under `data/<timestamp>` for each run.
 
 ## Database Storage (Optional)
 
