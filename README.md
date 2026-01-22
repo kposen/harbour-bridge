@@ -39,6 +39,7 @@ shell.
 - `SQLITE_DB_PATH`: Optional. Filesystem path to a SQLite database
   (e.g., `data/financials.sqlite`).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
+- `config.toml`: Optional. Database float comparison tolerances for deduping.
 
 ## Data Flow
 

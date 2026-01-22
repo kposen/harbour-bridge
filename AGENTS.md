@@ -15,6 +15,7 @@
 - `python -m src.app` runs the main module when it is introduced.
 - Run pipeline: `python main.py` (requires `EODHD_API_KEY`).
 - Optional SQLite persistence via `SQLITE_DB_PATH`.
+- Configure float comparison tolerances in `config.toml`.
 
 ## Coding Style & Naming Conventions
 - Target Python 3.12+ and use strict type hinting throughout the codebase.

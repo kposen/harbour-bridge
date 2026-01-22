@@ -4,10 +4,13 @@ import logging
 from datetime import date, datetime
 from typing import Iterable, Mapping
 
+from math import isclose
+
 from sqlalchemy import Engine, create_engine, text
 
 from src.domain.schemas import FinancialModel, LineItems
 from src.logic.historic_builder import EODHD_FIELD_MAP
+from src.config import get_database_tolerances
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +33,8 @@ STATEMENT_NEGATIVE_LINE_ITEMS = {
     },
     "balance": set(),
 }
+
+RETRIEVAL_COLUMN = "retrieval_date"
 
 
 def get_engine(db_path: str) -> Engine:
@@ -60,6 +65,7 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
         FROM financial_facts
         WHERE symbol = :symbol
           AND is_forecast = 0
+          AND statement IN ('income', 'balance', 'cash_flow')
           AND value_source IN ('reported', 'reported_raw')
         """
     )
@@ -131,10 +137,11 @@ def ensure_schema(engine: Engine) -> None:
         date TEXT NOT NULL,
         period_type TEXT NOT NULL,
         field TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
         value_float REAL NULL,
         value_text TEXT NULL,
         value_type TEXT NOT NULL,
-        PRIMARY KEY (symbol, date, period_type, field)
+        PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
     );
     CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
         ON earnings (symbol, date);
@@ -143,12 +150,13 @@ def ensure_schema(engine: Engine) -> None:
         date TEXT NOT NULL,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
         totalShares REAL NULL,
         totalAssets REAL NULL,
         currentShares REAL NULL,
         change REAL NULL,
         change_p REAL NULL,
-        PRIMARY KEY (symbol, date, name)
+        PRIMARY KEY (symbol, date, name, retrieval_date)
     );
     CREATE INDEX IF NOT EXISTS IX_holders_symbol_date
         ON holders (symbol, date);
@@ -156,6 +164,7 @@ def ensure_schema(engine: Engine) -> None:
         symbol TEXT NOT NULL,
         date TEXT NOT NULL,
         ownerName TEXT NOT NULL,
+        retrieval_date TEXT NOT NULL,
         transactionDate TEXT NULL,
         transactionCode TEXT NULL,
         transactionAmount REAL NULL,
@@ -163,7 +172,7 @@ def ensure_schema(engine: Engine) -> None:
         transactionAcquiredDisposed TEXT NULL,
         postTransactionAmount REAL NULL,
         secLink TEXT NULL,
-        PRIMARY KEY (symbol, date, ownerName)
+        PRIMARY KEY (symbol, date, ownerName, retrieval_date)
     );
     CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
         ON insider_transactions (symbol, date);
@@ -204,7 +213,6 @@ def write_market_metrics(
     rows = list(_iter_market_metrics(symbol, retrieval_date, raw_data))
     if not rows:
         return 0
-    logger.info("Writing %d market metrics for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO market_metrics (
@@ -227,14 +235,25 @@ def write_market_metrics(
         )
         """
     )
+    match_columns = ("symbol", "section", "metric")
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="market_metrics",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d market metrics for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def write_earnings(
     engine: Engine,
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> int:
     """Write earnings payload data to the earnings table.
@@ -242,15 +261,15 @@ def write_earnings(
     Args:
         engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
         int: Number of inserted rows.
     """
-    rows = list(_iter_earnings_rows(symbol, raw_data))
+    rows = list(_iter_earnings_rows(symbol, retrieval_date, raw_data))
     if not rows:
         return 0
-    logger.info("Writing %d earnings rows for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO earnings (
@@ -258,6 +277,7 @@ def write_earnings(
             date,
             period_type,
             field,
+            retrieval_date,
             value_float,
             value_text,
             value_type
@@ -267,20 +287,32 @@ def write_earnings(
             :date,
             :period_type,
             :field,
+            :retrieval_date,
             :value_float,
             :value_text,
             :value_type
         )
         """
     )
+    match_columns = ("symbol", "date", "period_type", "field")
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="earnings",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d earnings rows for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def write_holders(
     engine: Engine,
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> int:
     """Write holders payload data to the holders table.
@@ -288,15 +320,15 @@ def write_holders(
     Args:
         engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
         int: Number of inserted rows.
     """
-    rows = _iter_holders_rows(symbol, raw_data)
+    rows = _iter_holders_rows(symbol, retrieval_date, raw_data)
     if not rows:
         return 0
-    logger.info("Writing %d holder rows for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO holders (
@@ -304,6 +336,7 @@ def write_holders(
             date,
             name,
             category,
+            retrieval_date,
             totalShares,
             totalAssets,
             currentShares,
@@ -315,6 +348,7 @@ def write_holders(
             :date,
             :name,
             :category,
+            :retrieval_date,
             :totalShares,
             :totalAssets,
             :currentShares,
@@ -323,14 +357,25 @@ def write_holders(
         )
         """
     )
+    match_columns = ("symbol", "date", "name")
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="holders",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d holder rows for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def write_insider_transactions(
     engine: Engine,
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> int:
     """Write insider transactions payload data to the insider_transactions table.
@@ -338,21 +383,22 @@ def write_insider_transactions(
     Args:
         engine (Engine): SQLAlchemy engine for SQLite.
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
         int: Number of inserted rows.
     """
-    rows = _iter_insider_rows(symbol, raw_data)
+    rows = _iter_insider_rows(symbol, retrieval_date, raw_data)
     if not rows:
         return 0
-    logger.info("Writing %d insider transactions for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO insider_transactions (
             symbol,
             date,
             ownerName,
+            retrieval_date,
             transactionDate,
             transactionCode,
             transactionAmount,
@@ -365,6 +411,7 @@ def write_insider_transactions(
             :symbol,
             :date,
             :ownerName,
+            :retrieval_date,
             :transactionDate,
             :transactionCode,
             :transactionAmount,
@@ -375,9 +422,19 @@ def write_insider_transactions(
         )
         """
     )
+    match_columns = ("symbol", "date", "ownerName")
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="insider_transactions",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d insider transactions for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def write_listings(
@@ -398,7 +455,6 @@ def write_listings(
     rows = _iter_listings_rows(retrieval_date, raw_data)
     if not rows:
         return 0
-    logger.info("Writing %d listing rows", len(rows))
     insert_sql = text(
         """
         INSERT INTO listings (
@@ -417,19 +473,31 @@ def write_listings(
         )
         """
     )
+    match_columns = ("code", "exchange")
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="listings",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d listing rows", len(rows_to_insert))
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def _iter_earnings_rows(
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> Iterable[dict[str, object]]:
     """Yield earnings rows from the payload.
 
     Args:
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
@@ -438,6 +506,7 @@ def _iter_earnings_rows(
     earnings = raw_data.get("Earnings")
     if not isinstance(earnings, Mapping):
         return []
+    retrieval_stamp = retrieval_date.isoformat()
     for branch, period_type in (
         ("History", "quarterly"),
         ("Annual", "annual"),
@@ -464,6 +533,7 @@ def _iter_earnings_rows(
                         "date": period,
                         "period_type": period_type,
                         "field": str(field),
+                        "retrieval_date": retrieval_stamp,
                         "value_float": value_float,
                         "value_text": None,
                         "value_type": "float",
@@ -474,6 +544,7 @@ def _iter_earnings_rows(
                         "date": period,
                         "period_type": period_type,
                         "field": str(field),
+                        "retrieval_date": retrieval_stamp,
                         "value_float": None,
                         "value_text": str(raw_value),
                         "value_type": "text",
@@ -482,12 +553,14 @@ def _iter_earnings_rows(
 
 def _iter_holders_rows(
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> list[dict[str, object]]:
     """Yield holder rows from the payload.
 
     Args:
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
@@ -496,12 +569,14 @@ def _iter_holders_rows(
     holders = raw_data.get("Holders")
     if not isinstance(holders, Mapping):
         return []
+    retrieval_stamp = retrieval_date.isoformat()
     return [
         {
             "symbol": symbol,
             "date": entry.get("date", "").strip(),
             "name": entry.get("name", "").strip(),
             "category": category,
+            "retrieval_date": retrieval_stamp,
             "totalShares": _to_float(entry.get("totalShares")),
             "totalAssets": _to_float(entry.get("totalAssets")),
             "currentShares": _to_float(entry.get("currentShares")),
@@ -522,12 +597,14 @@ def _iter_holders_rows(
 
 def _iter_insider_rows(
     symbol: str,
+    retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> list[dict[str, object]]:
     """Yield insider transaction rows from the payload.
 
     Args:
         symbol (str): Ticker symbol for the payload.
+        retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
     Returns:
@@ -536,6 +613,7 @@ def _iter_insider_rows(
     transactions = raw_data.get("InsiderTransactions")
     if not isinstance(transactions, Mapping):
         return []
+    retrieval_stamp = retrieval_date.isoformat()
     rows: list[dict[str, object]] = []
     for _, entry in transactions.items():
         if not isinstance(entry, Mapping):
@@ -551,6 +629,7 @@ def _iter_insider_rows(
                 "symbol": symbol,
                 "date": date_str,
                 "ownerName": owner.strip(),
+                "retrieval_date": retrieval_stamp,
                 "transactionDate": entry.get("transactionDate"),
                 "transactionCode": entry.get("transactionCode"),
                 "transactionAmount": _to_float(entry.get("transactionAmount")),
@@ -585,11 +664,12 @@ def _iter_listings_rows(
         return []
     if not isinstance(listings, Mapping):
         return []
+    retrieval_stamp = retrieval_date.isoformat()
     return [
         {
             "code": entry.get("Code", "").strip(),
             "exchange": entry.get("Exchange", "").strip(),
-            "retrieval_date": retrieval_date,
+            "retrieval_date": retrieval_stamp,
             "primary_ticker": primary_ticker.strip(),
             "name": entry.get("Name"),
         }
@@ -627,6 +707,7 @@ def _iter_market_metrics(
         "AnalystRatings",
         "SplitsDividends",
     )
+    retrieval_stamp = retrieval_date.isoformat()
     for section in sections:
         data = raw_data.get(section)
         if not isinstance(data, Mapping):
@@ -653,7 +734,7 @@ def _iter_market_metrics(
             if value_float is not None:
                 yield {
                     "symbol": symbol,
-                    "retrieval_date": retrieval_date,
+                    "retrieval_date": retrieval_stamp,
                     "section": section,
                     "metric": metric,
                     "value_float": value_float,
@@ -663,7 +744,7 @@ def _iter_market_metrics(
             elif raw_value is not None:
                 yield {
                     "symbol": symbol,
-                    "retrieval_date": retrieval_date,
+                    "retrieval_date": retrieval_stamp,
                     "section": section,
                     "metric": metric,
                     "value_float": None,
@@ -710,7 +791,6 @@ def write_financial_facts(
     )
     if not rows:
         return 0
-    logger.info("Writing %d fact rows for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO financial_facts (
@@ -741,9 +821,29 @@ def write_financial_facts(
         )
         """
     )
+    match_columns = (
+        "symbol",
+        "fiscal_date",
+        "filing_date",
+        "period_type",
+        "statement",
+        "line_item",
+        "value_source",
+        "provider",
+        "is_forecast",
+    )
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="financial_facts",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d fact rows for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def _iter_fact_rows(
@@ -770,10 +870,13 @@ def _iter_fact_rows(
         Iterable[dict[str, object]]: Row dictionaries for insertion.
     """
     history_len = len(model.history)
+    retrieval_stamp = retrieval_date.isoformat()
     all_items = [*model.history, *model.forecast]
     for index, item in enumerate(all_items):
         is_forecast = index >= history_len
         filing_date = filing_dates.get(item.period, item.period)
+        fiscal_stamp = item.period.isoformat()
+        filing_stamp = filing_date.isoformat()
         for statement, values in (
             ("income", item.income),
             ("balance", item.balance),
@@ -782,15 +885,15 @@ def _iter_fact_rows(
             for line_item, value in values.items():
                 yield {
                     "symbol": symbol,
-                    "fiscal_date": item.period,
-                    "filing_date": filing_date,
-                    "retrieval_date": retrieval_date,
+                    "fiscal_date": fiscal_stamp,
+                    "filing_date": filing_stamp,
+                    "retrieval_date": retrieval_stamp,
                     "period_type": period_type,
                     "statement": statement,
                     "line_item": line_item,
                     "value_source": value_source,
                     "value": value,
-                    "is_forecast": is_forecast,
+                    "is_forecast": int(is_forecast),
                     "provider": provider,
                 }
 
@@ -827,7 +930,6 @@ def write_reported_facts(
     )
     if not rows:
         return 0
-    logger.info("Writing %d reported fact rows for %s", len(rows), symbol)
     insert_sql = text(
         """
         INSERT INTO financial_facts (
@@ -858,9 +960,29 @@ def write_reported_facts(
         )
         """
     )
+    match_columns = (
+        "symbol",
+        "fiscal_date",
+        "filing_date",
+        "period_type",
+        "statement",
+        "line_item",
+        "value_source",
+        "provider",
+        "is_forecast",
+    )
     with engine.begin() as conn:
-        conn.execute(insert_sql, rows)
-    return len(rows)
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="financial_facts",
+            rows=rows,
+            match_columns=match_columns,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d reported fact rows for %s", len(rows_to_insert), symbol)
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
 
 
 def _iter_reported_rows(
@@ -886,6 +1008,7 @@ def _iter_reported_rows(
     if not isinstance(financials, Mapping):
         return []
 
+    retrieval_stamp = retrieval_date.isoformat()
     for period_type in ("yearly", "quarterly"):
         for statement, key in (
             ("income", "Income_Statement"),
@@ -906,6 +1029,8 @@ def _iter_reported_rows(
                     continue
                 filing_date = _parse_date(values.get("filing_date")) or fiscal_date
                 period_label = "annual" if period_type == "yearly" else "quarterly"
+                fiscal_stamp = fiscal_date.isoformat()
+                filing_stamp = filing_date.isoformat()
                 for line_item, keys in field_map.items():
                     raw_value = _first_value(values, keys)
                     if raw_value is None:
@@ -914,15 +1039,15 @@ def _iter_reported_rows(
                     value = -raw_value if line_item in negative_items else raw_value
                     yield {
                         "symbol": symbol,
-                        "fiscal_date": fiscal_date,
-                        "filing_date": filing_date,
-                        "retrieval_date": retrieval_date,
+                        "fiscal_date": fiscal_stamp,
+                        "filing_date": filing_stamp,
+                        "retrieval_date": retrieval_stamp,
                         "period_type": period_label,
                         "statement": statement,
                         "line_item": line_item,
                         "value_source": "reported",
                         "value": value,
-                        "is_forecast": False,
+                        "is_forecast": 0,
                         "provider": provider,
                     }
                 for raw_key, raw_value in values.items():
@@ -931,15 +1056,15 @@ def _iter_reported_rows(
                         continue
                     yield {
                         "symbol": symbol,
-                        "fiscal_date": fiscal_date,
-                        "filing_date": filing_date,
-                        "retrieval_date": retrieval_date,
+                        "fiscal_date": fiscal_stamp,
+                        "filing_date": filing_stamp,
+                        "retrieval_date": retrieval_stamp,
                         "period_type": period_label,
                         "statement": statement,
                         "line_item": str(raw_key),
                         "value_source": "reported_raw",
                         "value": numeric_value,
-                        "is_forecast": False,
+                        "is_forecast": 0,
                         "provider": provider,
                     }
 
@@ -962,19 +1087,157 @@ def _iter_reported_rows(
                 shares = _to_float(entry.get("shares"))
                 if shares is None:
                     continue
+                fiscal_stamp = fiscal_date.isoformat()
                 yield {
                     "symbol": symbol,
-                    "fiscal_date": fiscal_date,
-                    "filing_date": fiscal_date,
-                    "retrieval_date": retrieval_date,
+                    "fiscal_date": fiscal_stamp,
+                    "filing_date": fiscal_stamp,
+                    "retrieval_date": retrieval_stamp,
                     "period_type": label,
                     "statement": "multi_statement",
                     "line_item": "shares",
                     "value_source": "reported",
                     "value": shares,
-                    "is_forecast": False,
+                    "is_forecast": 0,
                     "provider": provider,
                 }
+
+
+def _filter_versioned_rows(
+    conn,
+    table: str,
+    rows: list[dict[str, object]],
+    match_columns: tuple[str, ...],
+    retrieval_column: str = RETRIEVAL_COLUMN,
+) -> list[dict[str, object]]:
+    """Filter rows to those that should be inserted as new versions.
+
+    Args:
+        conn (Connection): SQLAlchemy connection for querying.
+        table (str): Table name for version checks.
+        rows (list[dict[str, object]]): Candidate rows for insertion.
+        match_columns (tuple[str, ...]): Columns defining a record identity.
+        retrieval_column (str): Column used for versioning.
+
+    Returns:
+        list[dict[str, object]]: Rows that should be inserted.
+    """
+    if not rows:
+        return []
+    rel_tol, abs_tol = get_database_tolerances()
+    where_clause = " AND ".join(f"{column} = :{column}" for column in match_columns)
+    query = text(
+        f"""
+        SELECT *
+        FROM {table}
+        WHERE {where_clause}
+        ORDER BY {retrieval_column} DESC
+        LIMIT 1
+        """
+    )
+    filtered: list[dict[str, object]] = []
+    for row in rows:
+        match_params = {column: row.get(column) for column in match_columns}
+        existing = conn.execute(query, match_params).mappings().first()
+        if existing is None:
+            filtered.append(row)
+            continue
+        compare_columns = [
+            column
+            for column in row.keys()
+            if column not in match_columns and column != retrieval_column
+        ]
+        if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol):
+            continue
+        filtered.append(row)
+    return filtered
+
+
+def _rows_equal(
+    existing: Mapping[str, object],
+    incoming: Mapping[str, object],
+    compare_columns: list[str],
+    rel_tol: float,
+    abs_tol: float,
+) -> bool:
+    """Compare existing and incoming rows with tolerance for numeric values.
+
+    Args:
+        existing (Mapping[str, object]): Existing row mapping.
+        incoming (Mapping[str, object]): Incoming row mapping.
+        compare_columns (list[str]): Columns to compare for equality.
+        rel_tol (float): Relative tolerance for numeric comparisons.
+        abs_tol (float): Absolute tolerance for numeric comparisons.
+
+    Returns:
+        bool: True if rows are equivalent by column comparison.
+    """
+    for column in compare_columns:
+        if not _values_equal(
+            existing.get(column),
+            incoming.get(column),
+            rel_tol=rel_tol,
+            abs_tol=abs_tol,
+        ):
+            return False
+    return True
+
+
+def _values_equal(value: object, other: object, rel_tol: float, abs_tol: float) -> bool:
+    """Compare two values with numeric normalization and tolerance.
+
+    Args:
+        value (object): First value to compare.
+        other (object): Second value to compare.
+        rel_tol (float): Relative tolerance for numeric comparisons.
+        abs_tol (float): Absolute tolerance for numeric comparisons.
+
+    Returns:
+        bool: True when values are equivalent.
+    """
+    if value is None and other is None:
+        return True
+    if value is None or other is None:
+        return False
+    value_float = _parse_float(value)
+    other_float = _parse_float(other)
+    if value_float is not None and other_float is not None:
+        return isclose(value_float, other_float, rel_tol=rel_tol, abs_tol=abs_tol)
+    return _normalize_text(value) == _normalize_text(other)
+
+
+def _parse_float(value: object) -> float | None:
+    """Attempt to parse a float from a value.
+
+    Args:
+        value (object): Value to parse.
+
+    Returns:
+        float | None: Parsed float when possible.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_text(value: object) -> str:
+    """Normalize a value into a comparable string.
+
+    Args:
+        value (object): Value to normalize.
+
+    Returns:
+        str: Normalized string representation.
+    """
+    return str(value).strip()
 
 
 def _first_value(values: Mapping[str, object], keys: tuple[str, ...]) -> float | None:

@@ -147,16 +147,19 @@ def run_pipeline(results_dir: Path) -> None:
             write_earnings(
                 engine=engine,
                 symbol=ticker,
+                retrieval_date=retrieval_date,
                 raw_data=raw_data,
             )
             write_holders(
                 engine=engine,
                 symbol=ticker,
+                retrieval_date=retrieval_date,
                 raw_data=raw_data,
             )
             write_insider_transactions(
                 engine=engine,
                 symbol=ticker,
+                retrieval_date=retrieval_date,
                 raw_data=raw_data,
             )
             write_listings(

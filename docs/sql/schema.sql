@@ -48,10 +48,11 @@ CREATE TABLE earnings (
     date TEXT NOT NULL,
     period_type TEXT NOT NULL,
     field TEXT NOT NULL,
+    retrieval_date TEXT NOT NULL,
     value_float REAL NULL,
     value_text TEXT NULL,
     value_type TEXT NOT NULL,
-    PRIMARY KEY (symbol, date, period_type, field)
+    PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
 );
 
 CREATE INDEX IX_earnings_symbol_date
@@ -62,12 +63,13 @@ CREATE TABLE holders (
     date TEXT NOT NULL,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
+    retrieval_date TEXT NOT NULL,
     totalShares REAL NULL,
     totalAssets REAL NULL,
     currentShares REAL NULL,
     change REAL NULL,
     change_p REAL NULL,
-    PRIMARY KEY (symbol, date, name)
+    PRIMARY KEY (symbol, date, name, retrieval_date)
 );
 
 CREATE INDEX IX_holders_symbol_date
@@ -77,6 +79,7 @@ CREATE TABLE insider_transactions (
     symbol TEXT NOT NULL,
     date TEXT NOT NULL,
     ownerName TEXT NOT NULL,
+    retrieval_date TEXT NOT NULL,
     transactionDate TEXT NULL,
     transactionCode TEXT NULL,
     transactionAmount REAL NULL,
@@ -84,7 +87,7 @@ CREATE TABLE insider_transactions (
     transactionAcquiredDisposed TEXT NULL,
     postTransactionAmount REAL NULL,
     secLink TEXT NULL,
-    PRIMARY KEY (symbol, date, ownerName)
+    PRIMARY KEY (symbol, date, ownerName, retrieval_date)
 );
 
 CREATE INDEX IX_insider_transactions_symbol_date
