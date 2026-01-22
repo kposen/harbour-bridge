@@ -3,8 +3,13 @@ from __future__ import annotations
 """Build normalized financial statements from raw provider payloads."""
 
 from datetime import date, datetime
+from functools import partial
+from itertools import chain
 from math import isclose
+from operator import itemgetter
 from typing import Any, Mapping
+
+from toolz import assoc
 
 import logging
 
@@ -82,14 +87,13 @@ def build_historic_model(
     records = _extract_records(raw_data)
     ticker = _extract_ticker(raw_data)
     logger.debug("Extracted %d records", len(records))
-    for record in records:
-        # Ensure every record has a date to anchor its period.
-        if record.get("date") is None:
-            raise ValueError("record date is missing or invalid")
+    missing_date = next((record for record in records if record.get("date") is None), None)
+    if missing_date is not None:
+        raise ValueError("record date is missing or invalid")
     # Build line items in chronological order.
     history = [
         _build_line_items(record, field_map, ticker)
-        for record in sorted(records, key=lambda item: item["date"])
+        for record in sorted(records, key=itemgetter("date"))
     ]
     logger.debug("Built %d LineItems entries", len(history))
     return FinancialModel(history=history, forecast=[])
@@ -107,39 +111,45 @@ def _extract_records(raw_data: Mapping[str, Any]) -> list[dict[str, Any]]:
     # Shares are optional and may come from a separate branch.
     shares_by_date = _extract_outstanding_shares(raw_data)
     logger.debug("Parsed %d share-date entries", len(shares_by_date))
-    if "records" in raw_data and isinstance(raw_data["records"], list):
-        # Already record-like: just normalize dates.
-        records = [
-            {**dict(item), "date": _parse_date(dict(item).get("date"))}
-            for item in raw_data["records"]
-        ]
-        return _attach_shares(records, shares_by_date)
-    if "raw_financials" in raw_data and isinstance(raw_data["raw_financials"], list):
-        # Alternative list shape.
-        records = [
-            {**dict(item), "date": _parse_date(dict(item).get("date"))}
-            for item in raw_data["raw_financials"]
-        ]
-        return _attach_shares(records, shares_by_date)
-    if "rows" in raw_data and isinstance(raw_data["rows"], list):
-        # Another possible list-based payload.
-        records = [
-            {**dict(item), "date": _parse_date(dict(item).get("date"))}
-            for item in raw_data["rows"]
-        ]
-        return _attach_shares(records, shares_by_date)
+    list_sources = ("records", "raw_financials", "rows")
+    list_records = next(
+        (
+            _normalize_record_list(raw_data[key])
+            for key in list_sources
+            if isinstance(raw_data.get(key), list)
+        ),
+        None,
+    )
+    if list_records is not None:
+        return _attach_shares(list_records, shares_by_date)
 
-    if "Financials" in raw_data:
-        # EODHD-style payload (capitalized key).
-        records = _extract_eodhd_yearly(raw_data["Financials"])
-        return _attach_shares(records, shares_by_date)
-
-    if "financials" in raw_data:
-        # EODHD-style payload (lowercase key).
-        records = _extract_eodhd_yearly(raw_data["financials"])
-        return _attach_shares(records, shares_by_date)
+    financials = next(
+        (
+            raw_data[key]
+            for key in ("Financials", "financials")
+            if isinstance(raw_data.get(key), Mapping)
+        ),
+        None,
+    )
+    if financials is not None:
+        return _attach_shares(_extract_eodhd_yearly(financials), shares_by_date)
 
     raise ValueError("raw_data must include 'records' or 'Financials'")
+
+
+def _normalize_record_list(entries: list[object]) -> list[dict[str, Any]]:
+    """Normalize a list of record entries with parsed dates.
+
+    Args:
+        entries (list[object]): Raw record entries.
+
+    Returns:
+        list[dict[str, Any]]: Records with parsed date fields.
+    """
+    return [
+        {**dict(item), "date": _parse_date(dict(item).get("date"))}
+        for item in entries
+    ]
 
 
 def _extract_ticker(raw_data: Mapping[str, Any]) -> str | None:
@@ -152,16 +162,17 @@ def _extract_ticker(raw_data: Mapping[str, Any]) -> str | None:
         str | None: Ticker symbol when available.
     """
     general = raw_data.get("General")
-    if isinstance(general, Mapping):
-        for key in ("Code", "PrimaryTicker", "Ticker"):
-            value = general.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    for key in ("ticker", "code", "symbol"):
-        value = raw_data.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+    general_keys = ("Code", "PrimaryTicker", "Ticker")
+    raw_keys = ("ticker", "code", "symbol")
+    general_values = (
+        (general.get(key) for key in general_keys) if isinstance(general, Mapping) else ()
+    )
+    raw_values = (raw_data.get(key) for key in raw_keys)
+    candidates = chain(general_values, raw_values)
+    return next(
+        (value.strip() for value in candidates if isinstance(value, str) and value.strip()),
+        None,
+    )
 
 
 def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -198,6 +209,27 @@ def _extract_eodhd_yearly(financials: Mapping[str, Any]) -> list[dict[str, Any]]
     return records
 
 
+def _shares_entry(entry: Mapping[str, Any]) -> tuple[date, float] | None:
+    """Normalize a shares entry to a (date, shares) pair.
+
+    Args:
+        entry (Mapping[str, Any]): Outstanding shares entry.
+
+    Returns:
+        tuple[date, float] | None: Parsed date and shares, if available.
+    """
+    period = _parse_date(entry.get("dateFormatted")) or _parse_year(entry.get("date"))
+    if period is None:
+        return None
+    shares = _to_float(entry.get("shares"))
+    if shares is None:
+        shares_mln = _to_float(entry.get("sharesMln"))
+        shares = shares_mln * 1_000_000 if shares_mln is not None else None
+    if shares is None:
+        return None
+    return period, shares
+
+
 def _extract_outstanding_shares(raw_data: Mapping[str, Any]) -> dict[date, float]:
     """Parse annual outstanding share counts keyed by date.
 
@@ -218,24 +250,11 @@ def _extract_outstanding_shares(raw_data: Mapping[str, Any]) -> dict[date, float
     else:
         return {}
 
-    shares_by_date: dict[date, float] = {}
-    for entry in entries:
-        if not isinstance(entry, Mapping):
-            continue
-        # Prefer formatted date; fall back to year-only.
-        period = _parse_date(entry.get("dateFormatted")) or _parse_year(entry.get("date"))
-        if period is None:
-            continue
-        # Prefer absolute shares; fall back to millions.
-        shares = _to_float(entry.get("shares"))
-        if shares is None:
-            shares_mln = _to_float(entry.get("sharesMln"))
-            if shares_mln is not None:
-                shares = shares_mln * 1_000_000
-        if shares is None:
-            continue
-        shares_by_date[period] = shares
-    return shares_by_date
+    pairs = (_shares_entry(entry) for entry in entries if isinstance(entry, Mapping))
+    return {
+        period: shares
+        for period, shares in (pair for pair in pairs if pair is not None)
+    }
 
 
 def _attach_shares(
@@ -253,26 +272,40 @@ def _attach_shares(
     """
     if not shares_by_date:
         return records
-    attached = 0
-    for record in records:
-        period = record.get("date")
-        if not isinstance(period, date):
-            continue
-        # Match by exact date, then by same-year fallback.
-        shares = _lookup_shares(shares_by_date, period)
-        if shares is None:
-            continue
-        income_record = record.get("income")
-        if isinstance(income_record, Mapping):
-            if "dilutedSharesOutstanding" not in income_record:
-                record["income"] = {**dict(income_record), "dilutedSharesOutstanding": shares}
-                attached += 1
-            continue
-        if "dilutedSharesOutstanding" not in record:
-            record["dilutedSharesOutstanding"] = shares
-            attached += 1
+    updated = [_attach_share(record, shares_by_date) for record in records]
+    attached = sum(1 for _, did_attach in updated if did_attach)
     logger.debug("Attached shares to %d records", attached)
-    return records
+    return [record for record, _ in updated]
+
+
+def _attach_share(
+    record: dict[str, Any],
+    shares_by_date: Mapping[date, float],
+) -> tuple[dict[str, Any], bool]:
+    """Attach shares to a record when missing.
+
+    Args:
+        record (dict[str, Any]): Record to update.
+        shares_by_date (Mapping[date, float]): Shares keyed by date.
+
+    Returns:
+        tuple[dict[str, Any], bool]: Updated record and attachment flag.
+    """
+    period = record.get("date")
+    if not isinstance(period, date):
+        return record, False
+    shares = _lookup_shares(shares_by_date, period)
+    if shares is None:
+        return record, False
+    income_record = record.get("income")
+    if isinstance(income_record, Mapping):
+        if "dilutedSharesOutstanding" in income_record:
+            return record, False
+        updated_income = assoc(dict(income_record), "dilutedSharesOutstanding", shares)
+        return assoc(dict(record), "income", updated_income), True
+    if "dilutedSharesOutstanding" in record:
+        return record, False
+    return assoc(dict(record), "dilutedSharesOutstanding", shares), True
 
 
 def _lookup_shares(shares_by_date: Mapping[date, float], period: date) -> float | None:
@@ -287,11 +320,11 @@ def _lookup_shares(shares_by_date: Mapping[date, float], period: date) -> float 
     """
     if period in shares_by_date:
         return shares_by_date[period]
-    matches = [(match_date, shares) for match_date, shares in shares_by_date.items() if match_date.year == period.year]
-    if not matches:
-        return None
-    # Use the latest date within the same year.
-    return max(matches, key=lambda item: item[0])[1]
+    matches = (
+        item for item in shares_by_date.items() if item[0].year == period.year
+    )
+    latest = max(matches, key=itemgetter(0), default=None)
+    return latest[1] if latest else None
 
 
 def _parse_year(value: Any) -> date | None:
@@ -386,16 +419,15 @@ def _build_income_items(
     # Currying the record keeps calls compact and explicit.
     value_of = _value_in(record)
     negative_value_of = _negative_value_in(record)
+    checked = partial(_checked_value, ticker=ticker, period=period)
     revenue = value_of(*field_map["revenue"])
     gross_profit = value_of(*field_map["gross_profit"])
     gross_costs_reported = negative_value_of(*field_map["gross_costs"])
     # Validate derived line items against reported values when both exist.
-    gross_costs = _checked_value(
+    gross_costs = checked(
         "gross_costs",
         _calculate_gross_costs(revenue, gross_profit),
         gross_costs_reported,
-        ticker,
-        period,
     )
 
     depreciation = negative_value_of(*field_map["depreciation"])
@@ -410,21 +442,22 @@ def _build_income_items(
         amortization,
         operating_income_reported,
     )
-    operating_income = _checked_value(
+    operating_income = checked(
         "operating_income",
-        _calculate_operating_income(gross_profit, depreciation, amortization, other_operating_expenses),
+        _calculate_operating_income(
+            gross_profit,
+            depreciation,
+            amortization,
+            other_operating_expenses,
+        ),
         operating_income_reported,
-        ticker,
-        period,
     )
 
     ebitda_reported = value_of("ebitda", "EBITDA")
-    ebitda = _checked_value(
+    ebitda = checked(
         "ebitda",
         _calculate_ebitda(operating_income, depreciation, amortization),
         ebitda_reported,
-        ticker,
-        period,
     )
 
     interest_income = value_of(*field_map["interest_income"])
@@ -437,7 +470,7 @@ def _build_income_items(
         value_of(*field_map["pre_tax_income"]),
     )
 
-    pre_tax_income = _checked_value(
+    pre_tax_income = checked(
         "pre_tax_income",
         _calculate_pre_tax_income(
             operating_income,
@@ -446,18 +479,14 @@ def _build_income_items(
             other_non_operating,
         ),
         value_of(*field_map["pre_tax_income"]),
-        ticker,
-        period,
     )
 
     income_tax = negative_value_of(*field_map["income_tax"])
     affiliates_income = value_of(*field_map["affiliates_income"])
-    net_income = _checked_value(
+    net_income = checked(
         "net_income",
         _calculate_net_income(pre_tax_income, income_tax, affiliates_income),
         value_of(*field_map["net_income"]),
-        ticker,
-        period,
     )
 
     minorities_expense = negative_value_of(*field_map["minorities_expense"])
@@ -584,6 +613,7 @@ def _build_cash_flow_items(
     """
     value_of = _value_in(record)
     negative_value_of = _negative_value_in(record)
+    checked = partial(_checked_value, ticker=ticker, period=period)
     net_income_cfs = value_of(*field_map["net_income"])
     depreciation_raw = value_of(*field_map["depreciation"])
     amortization_raw = value_of(*field_map["amortization"])
@@ -601,7 +631,7 @@ def _build_cash_flow_items(
         amortization,
         working_cap_change,
     )
-    cash_from_operations = _checked_value(
+    cash_from_operations = checked(
         "cash_from_operations",
         _calculate_cash_from_operations(
             net_income_cfs,
@@ -611,8 +641,6 @@ def _build_cash_flow_items(
             other_cfo,
         ),
         cfo_reported,
-        ticker,
-        period,
     )
 
     capex_fixed = negative_value_of(*field_map["capex_fixed"])
@@ -620,12 +648,10 @@ def _build_cash_flow_items(
     sale_ppe = value_of(*field_map["sale_ppe"])
     cfi_reported = value_of(*field_map["cash_from_investing"])
     other_cfi = _calculate_other_cfi(cfi_reported, capex_fixed, capex_other, sale_ppe)
-    cash_from_investing = _checked_value(
+    cash_from_investing = checked(
         "cash_from_investing",
         _calculate_cash_from_investing(capex_fixed, capex_other, sale_ppe, other_cfi),
         cfi_reported,
-        ticker,
-        period,
     )
 
     dividends_paid = negative_value_of(*field_map["dividends_paid"])
@@ -640,7 +666,7 @@ def _build_cash_flow_items(
         share_sales,
         debt_cf,
     )
-    cash_from_financing = _checked_value(
+    cash_from_financing = checked(
         "cash_from_financing",
         _calculate_cash_from_financing(
             dividends_paid,
@@ -650,8 +676,6 @@ def _build_cash_flow_items(
             other_cff,
         ),
         cff_reported,
-        ticker,
-        period,
     )
 
     change_in_cash = _calculate_change_in_cash(
@@ -661,12 +685,10 @@ def _build_cash_flow_items(
     )
 
     free_cash_flow_reported = _value(record, "freeCashFlow", "free_cash_flow")
-    free_cash_flow = _checked_value(
+    free_cash_flow = checked(
         "free_cash_flow",
         _calculate_free_cash_flow(cash_from_operations, capex_fixed, capex_other),
         free_cash_flow_reported,
-        ticker,
-        period,
     )
 
     return {
@@ -739,10 +761,10 @@ def _value(record: Mapping[str, Any], *keys: str) -> float | None:
     Returns:
         float | None: Parsed numeric value if found.
     """
-    for key in keys:
-        if key in record:
-            return _to_float(record.get(key))
-    return None
+    return next(
+        (_to_float(record.get(key)) for key in keys if key in record),
+        None,
+    )
 
 
 def _negative_value(record: Mapping[str, Any], *keys: str) -> float | None:
@@ -770,7 +792,7 @@ def _value_in(record: Mapping[str, Any]):
     Returns:
         Callable[..., float | None]: Function that resolves values by key list.
     """
-    return lambda *keys: _value(record, *keys)
+    return partial(_value, record)
 
 
 def _negative_value_in(record: Mapping[str, Any]):
@@ -782,7 +804,7 @@ def _negative_value_in(record: Mapping[str, Any]):
     Returns:
         Callable[..., float | None]: Function that resolves negated values.
     """
-    return lambda *keys: _negative_value(record, *keys)
+    return partial(_negative_value, record)
 
 
 def _to_float(value: Any) -> float | None:

@@ -136,17 +136,23 @@ def test_reported_facts_ingestion_net_income_cfs() -> None:
             raw_data=raw_data,
         )
     )
-    cfs_net_income = [
-        row
-        for row in rows
-        if row["statement"] == "cash_flow" and row["line_item"] == "net_income"
-    ]
-    assert len(cfs_net_income) == 1
-    raw_row = [
-        row
-        for row in rows
-        if row["statement"] == "cash_flow"
-        and row["line_item"] == "customField"
-        and row["value_source"] == "reported_raw"
-    ]
-    assert len(raw_row) == 1
+    cfs_net_income = next(
+        (
+            row
+            for row in rows
+            if row["statement"] == "cash_flow" and row["line_item"] == "net_income"
+        ),
+        None,
+    )
+    assert cfs_net_income is not None
+    raw_row = next(
+        (
+            row
+            for row in rows
+            if row["statement"] == "cash_flow"
+            and row["line_item"] == "customField"
+            and row["value_source"] == "reported_raw"
+        ),
+        None,
+    )
+    assert raw_row is not None

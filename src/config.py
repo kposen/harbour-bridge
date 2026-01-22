@@ -27,10 +27,9 @@ def load_config() -> dict[str, Any]:
     if _CONFIG_CACHE is not None:
         return _CONFIG_CACHE
     config_path = Path(__file__).resolve().parents[1] / "config.toml"
-    if not config_path.exists():
-        _CONFIG_CACHE = {}
-        return _CONFIG_CACHE
-    _CONFIG_CACHE = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    _CONFIG_CACHE = (
+        tomllib.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
     return _CONFIG_CACHE
 
 
@@ -45,9 +44,22 @@ def get_database_tolerances() -> tuple[float, float]:
     """
     config = load_config()
     database = config.get("database", {}) if isinstance(config, dict) else {}
-    rel_tol = database.get("float_rel_tol", DEFAULT_REL_TOL)
-    abs_tol = database.get("float_abs_tol", DEFAULT_ABS_TOL)
+    rel_tol = _coerce_float(database.get("float_rel_tol"), DEFAULT_REL_TOL)
+    abs_tol = _coerce_float(database.get("float_abs_tol"), DEFAULT_ABS_TOL)
+    return rel_tol, abs_tol
+
+
+def _coerce_float(value: object, default: float) -> float:
+    """Coerce a value to float with a default fallback.
+
+    Args:
+        value (object): Raw value to convert.
+        default (float): Default to return on error.
+
+    Returns:
+        float: Parsed float or default.
+    """
     try:
-        return float(rel_tol), float(abs_tol)
+        return float(value) if value is not None else default
     except (TypeError, ValueError):
-        return DEFAULT_REL_TOL, DEFAULT_ABS_TOL
+        return default

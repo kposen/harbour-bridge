@@ -31,9 +31,8 @@ class Statement(BaseModel):
             Statement: The validated model instance.
         """
         expected = len(self.periods)
-        for line in self.lines:
-            if len(line.values) != expected:
-                raise ValueError("all line values must match periods length")
+        if any(len(line.values) != expected for line in self.lines):
+            raise ValueError("all line values must match periods length")
         return self
 
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+from more_itertools import flatten
 
 from src.domain.schemas import FinancialModel, LineItems
 
@@ -103,21 +105,17 @@ def export_model_to_excel(model: FinancialModel, output_path: Path) -> None:
     logger.debug("Exporting %d periods to %s", len(items), output_path)
     history_len = len(model.history)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        _statement_frame(items, "income", INCOME_ORDER, history_len).to_excel(
-            writer,
-            sheet_name="Income statement",
-            index_label="Line item",
+        statements = (
+            ("income", INCOME_ORDER, "Income statement"),
+            ("balance", BALANCE_ORDER, "Balance sheet"),
+            ("cash_flow", CASH_FLOW_ORDER, "Cash flow statement"),
         )
-        _statement_frame(items, "balance", BALANCE_ORDER, history_len).to_excel(
-            writer,
-            sheet_name="Balance sheet",
-            index_label="Line item",
-        )
-        _statement_frame(items, "cash_flow", CASH_FLOW_ORDER, history_len).to_excel(
-            writer,
-            sheet_name="Cash flow statement",
-            index_label="Line item",
-        )
+        for section, order, sheet_name in statements:
+            _statement_frame(items, section, order, history_len).to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index_label="Line item",
+            )
         _format_workbook(writer, history_len)
 
 
@@ -140,7 +138,8 @@ def _statement_frame(
     """
     items_list = list(items)
     periods = [item.period.isoformat() for item in items_list]
-    data = [_section_map(item, section) for item in items_list]
+    selector = partial(_section_map, section=section)
+    data = list(map(selector, items_list))
     keys = [key for key in order if any(key in mapping for mapping in data)]
     rows = {key: [mapping.get(key) for mapping in data] for key in keys}
     actual_flags = ["A" if idx < history_len else "F" for idx in range(len(periods))]
@@ -185,10 +184,8 @@ def _format_workbook(writer: pd.ExcelWriter, history_len: int) -> None:
     for sheet in writer.sheets.values():
         sheet.sheet_view.showGridLines = False
         # Apply number format to data cells (excluding header and label rows).
-        for row in sheet.iter_rows(min_row=3, min_col=2):
-            for cell in row:
-                cell.number_format = NUMBER_FORMAT
+        for cell in flatten(sheet.iter_rows(min_row=3, min_col=2)):
+            cell.number_format = NUMBER_FORMAT
         # Left align line item descriptions.
-        for cell in sheet.iter_rows(min_row=3, max_col=1):
-            for item in cell:
-                item.alignment = item.alignment.copy(horizontal="left")
+        for item in flatten(sheet.iter_rows(min_row=3, max_col=1)):
+            item.alignment = item.alignment.copy(horizontal="left")

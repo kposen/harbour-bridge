@@ -63,7 +63,7 @@ def _share_path(ticker: str) -> Path:
         Path: The filesystem location for the ticker payload.
     """
     # Normalize to avoid duplicate files for different cases.
-    normalized = ticker.strip().upper()
+    normalized = _normalize_ticker(ticker)
     return DATA_DIR / f"{normalized}.json"
 
 
@@ -92,8 +92,20 @@ def save_raw_payload(run_dir: Path, ticker: str, payload: dict[str, object]) -> 
     Returns:
         Path: Path to the saved JSON payload.
     """
-    normalized = ticker.strip().upper()
+    normalized = _normalize_ticker(ticker)
     path = run_dir / f"{normalized}.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug("Saved raw payload to %s", path)
     return path
+
+
+def _normalize_ticker(ticker: str) -> str:
+    """Normalize ticker symbols for consistent filenames.
+
+    Args:
+        ticker (str): Raw ticker symbol.
+
+    Returns:
+        str: Uppercased, trimmed ticker symbol.
+    """
+    return ticker.strip().upper()

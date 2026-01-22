@@ -1,7 +1,9 @@
 mypy
+more-itertools
 openpyxl
 pandas
 pydantic
 pytest
 requests
 sqlalchemy
+toolz

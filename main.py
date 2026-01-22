@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,7 @@ def get_tickers_needing_update() -> list[str]:
         list[str]: Ticker symbols requiring updates.
     """
     # Allow explicit CLI args; otherwise fall back to the placeholder.
-    cli_tickers = [arg.strip() for arg in sys.argv[1:] if arg.strip()]
+    cli_tickers = list(filter(None, map(str.strip, sys.argv[1:])))
     if cli_tickers:
         return cli_tickers
     # Placeholder: wire this to a watchlist or datastore later.
@@ -219,17 +220,29 @@ def _filter_stale_tickers(tickers: list[str], engine) -> list[str]:
         return tickers
     today = datetime.utcnow().date()
     cutoff = _months_ago(today, 3)
-    stale = []
-    for ticker in tickers:
-        latest_filing = get_latest_filing_date(engine, ticker)
-        if latest_filing is None:
-            logger.info("No filing date found for %s; scheduling update", ticker)
-            stale.append(ticker)
-            continue
-        if latest_filing <= cutoff:
-            logger.info("Filing date for %s is older than %s; scheduling update", ticker, cutoff)
-            stale.append(ticker)
-    return stale
+    should_update = partial(_should_update, engine=engine, cutoff=cutoff)
+    return [ticker for ticker in tickers if should_update(ticker)]
+
+
+def _should_update(ticker: str, engine, cutoff: date) -> bool:
+    """Return True when a ticker should be refreshed.
+
+    Args:
+        ticker (str): Ticker symbol to check.
+        engine (Engine): SQL engine for queries.
+        cutoff (date): Cutoff date for staleness.
+
+    Returns:
+        bool: True when the ticker should be refreshed.
+    """
+    latest_filing = get_latest_filing_date(engine, ticker)
+    if latest_filing is None:
+        logger.info("No filing date found for %s; scheduling update", ticker)
+        return True
+    if latest_filing <= cutoff:
+        logger.info("Filing date for %s is older than %s; scheduling update", ticker, cutoff)
+        return True
+    return False
 
 
 def _months_ago(current: date, months: int) -> date:
@@ -242,11 +255,9 @@ def _months_ago(current: date, months: int) -> date:
     Returns:
         date: Date months before current, clamped to month end when needed.
     """
-    year = current.year
-    month = current.month - months
-    while month <= 0:
-        month += 12
-        year -= 1
+    year_offset, month_index = divmod(current.month - months - 1, 12)
+    year = current.year + year_offset
+    month = month_index + 1
     day = min(current.day, _month_end_day(year, month))
     return date(year, month, day)
 
@@ -280,25 +291,21 @@ def _extract_filing_dates(raw_data: dict[str, Any]) -> dict[date, date]:
     financials = raw_data.get("Financials")
     if not isinstance(financials, dict):
         return {}
-    filing_dates: dict[date, date] = {}
-    for statement_key in ("Income_Statement", "Balance_Sheet", "Cash_Flow"):
-        statement = financials.get(statement_key, {})
-        if not isinstance(statement, dict):
-            continue
-        yearly = statement.get("yearly", {})
-        if not isinstance(yearly, dict):
-            continue
-        for fiscal_str, values in yearly.items():
-            if not isinstance(values, dict):
-                continue
-            fiscal_date = _parse_date(fiscal_str)
-            if fiscal_date is None:
-                continue
-            filing_date = _parse_date(values.get("filing_date"))
-            if filing_date is None:
-                continue
-            filing_dates[fiscal_date] = filing_date
-    return filing_dates
+    pairs = (
+        (fiscal_date, filing_date)
+        for statement_key in ("Income_Statement", "Balance_Sheet", "Cash_Flow")
+        for statement in [financials.get(statement_key)]
+        if isinstance(statement, dict)
+        for yearly in [statement.get("yearly")]
+        if isinstance(yearly, dict)
+        for fiscal_str, values in yearly.items()
+        if isinstance(values, dict)
+        for fiscal_date in [_parse_date(fiscal_str)]
+        if fiscal_date is not None
+        for filing_date in [_parse_date(values.get("filing_date"))]
+        if filing_date is not None
+    )
+    return dict(pairs)
 
 
 def _parse_date(value: object) -> date | None:

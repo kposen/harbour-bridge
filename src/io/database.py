@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from functools import partial
+from itertools import chain
 from typing import Iterable, Mapping
 
 from math import isclose
 
+from toolz.itertoolz import mapcat
 from sqlalchemy import Engine, create_engine, text
 
 from src.domain.schemas import FinancialModel, LineItems
@@ -507,48 +510,108 @@ def _iter_earnings_rows(
     if not isinstance(earnings, Mapping):
         return []
     retrieval_stamp = retrieval_date.isoformat()
-    for branch, period_type in (
-        ("History", "quarterly"),
-        ("Annual", "annual"),
-        ("Trend", "trend"),
-    ):
-        data = earnings.get(branch)
-        if not isinstance(data, Mapping):
-            continue
-        for _, entry in data.items():
-            if not isinstance(entry, Mapping):
-                continue
-            period = entry.get("date")
-            if not isinstance(period, str) or not period.strip():
-                continue
-            for field, raw_value in entry.items():
-                if field in ("reportDate", "date"):
-                    continue
-                if isinstance(raw_value, (dict, list)):
-                    continue
-                value_float = _to_float(raw_value)
-                if value_float is not None:
-                    yield {
-                        "symbol": symbol,
-                        "date": period,
-                        "period_type": period_type,
-                        "field": str(field),
-                        "retrieval_date": retrieval_stamp,
-                        "value_float": value_float,
-                        "value_text": None,
-                        "value_type": "float",
-                    }
-                elif raw_value is not None:
-                    yield {
-                        "symbol": symbol,
-                        "date": period,
-                        "period_type": period_type,
-                        "field": str(field),
-                        "retrieval_date": retrieval_stamp,
-                        "value_float": None,
-                        "value_text": str(raw_value),
-                        "value_type": "text",
-                    }
+    branches = (("History", "quarterly"), ("Annual", "annual"), ("Trend", "trend"))
+
+    def branch_rows(pair: tuple[str, str]) -> Iterable[dict[str, object]]:
+        """Build earnings rows for a branch tuple.
+
+        Args:
+            pair (tuple[str, str]): Branch key and period type.
+
+        Returns:
+            Iterable[dict[str, object]]: Row dictionaries for insertion.
+        """
+        branch, period_type = pair
+        return _iter_earnings_branch(
+            symbol=symbol,
+            retrieval_stamp=retrieval_stamp,
+            period_type=period_type,
+            data=earnings.get(branch),
+        )
+
+    return mapcat(branch_rows, branches)
+
+
+def _iter_earnings_branch(
+    symbol: str,
+    retrieval_stamp: str,
+    period_type: str,
+    data: object,
+) -> Iterable[dict[str, object]]:
+    """Yield earnings rows for a specific earnings branch.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        period_type (str): Period type label ("annual", "quarterly", "trend").
+        data (object): Branch payload to parse.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if not isinstance(data, Mapping):
+        return []
+    entry_rows = partial(
+        _iter_earnings_entry_rows,
+        symbol,
+        retrieval_stamp,
+        period_type,
+    )
+    entries = (entry for entry in data.values() if isinstance(entry, Mapping))
+    return mapcat(entry_rows, entries)
+
+
+def _iter_earnings_entry_rows(
+    symbol: str,
+    retrieval_stamp: str,
+    period_type: str,
+    entry: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Yield earnings rows for a single entry in a branch.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        period_type (str): Period type label.
+        entry (Mapping[str, object]): Entry payload to parse.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    period = entry.get("date")
+    if not isinstance(period, str) or not period.strip():
+        return []
+
+    def row_for_field(field: str, raw_value: object) -> dict[str, object] | None:
+        """Build an earnings row for a single field/value pair.
+
+        Args:
+            field (str): Field name for the entry.
+            raw_value (object): Raw field value.
+
+        Returns:
+            dict[str, object] | None: Row dictionary or None when invalid.
+        """
+        if field in ("reportDate", "date"):
+            return None
+        if isinstance(raw_value, (dict, list)):
+            return None
+        base = {
+            "symbol": symbol,
+            "date": period,
+            "period_type": period_type,
+            "field": str(field),
+            "retrieval_date": retrieval_stamp,
+        }
+        return _typed_metric_row(base, raw_value)
+
+    rows = [
+        row
+        for field, raw_value in entry.items()
+        for row in [row_for_field(str(field), raw_value)]
+        if row is not None
+    ]
+    return rows
 
 
 def _iter_holders_rows(
@@ -614,32 +677,46 @@ def _iter_insider_rows(
     if not isinstance(transactions, Mapping):
         return []
     retrieval_stamp = retrieval_date.isoformat()
-    rows: list[dict[str, object]] = []
-    for _, entry in transactions.items():
-        if not isinstance(entry, Mapping):
-            continue
-        owner = entry.get("ownerName")
-        date_str = entry.get("date")
-        if not isinstance(owner, str) or not owner.strip():
-            continue
-        if not isinstance(date_str, str) or not date_str.strip():
-            continue
-        rows.append(
-            {
-                "symbol": symbol,
-                "date": date_str,
-                "ownerName": owner.strip(),
-                "retrieval_date": retrieval_stamp,
-                "transactionDate": entry.get("transactionDate"),
-                "transactionCode": entry.get("transactionCode"),
-                "transactionAmount": _to_float(entry.get("transactionAmount")),
-                "transactionPrice": _to_float(entry.get("transactionPrice")),
-                "transactionAcquiredDisposed": entry.get("transactionAcquiredDisposed"),
-                "postTransactionAmount": _to_float(entry.get("postTransactionAmount")),
-                "secLink": entry.get("secLink"),
-            }
-        )
-    return rows
+    row_builder = partial(_insider_row, symbol, retrieval_stamp)
+    return [row for row in map(row_builder, transactions.values()) if row is not None]
+
+
+def _insider_row(
+    symbol: str,
+    retrieval_stamp: str,
+    entry: object,
+) -> dict[str, object] | None:
+    """Build a row for a single insider transaction entry.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        entry (object): Raw entry payload.
+
+    Returns:
+        dict[str, object] | None: Row dictionary or None when invalid.
+    """
+    if not isinstance(entry, Mapping):
+        return None
+    owner = entry.get("ownerName")
+    date_str = entry.get("date")
+    if not isinstance(owner, str) or not owner.strip():
+        return None
+    if not isinstance(date_str, str) or not date_str.strip():
+        return None
+    return {
+        "symbol": symbol,
+        "date": date_str,
+        "ownerName": owner.strip(),
+        "retrieval_date": retrieval_stamp,
+        "transactionDate": entry.get("transactionDate"),
+        "transactionCode": entry.get("transactionCode"),
+        "transactionAmount": _to_float(entry.get("transactionAmount")),
+        "transactionPrice": _to_float(entry.get("transactionPrice")),
+        "transactionAcquiredDisposed": entry.get("transactionAcquiredDisposed"),
+        "postTransactionAmount": _to_float(entry.get("postTransactionAmount")),
+        "secLink": entry.get("secLink"),
+    }
 
 
 def _iter_listings_rows(
@@ -708,49 +785,71 @@ def _iter_market_metrics(
         "SplitsDividends",
     )
     retrieval_stamp = retrieval_date.isoformat()
-    for section in sections:
-        data = raw_data.get(section)
-        if not isinstance(data, Mapping):
-            continue
-        metrics = {
-            str(metric): raw_value
-            for metric, raw_value in data.items()
-            if not isinstance(raw_value, (dict, list))
-        }
-        if section == "General":
-            address_data = data.get("AddressData")
-            if isinstance(address_data, Mapping):
-                for key, value in address_data.items():
-                    key_name = str(key)
-                    if key_name in metrics:
-                        logger.info(
-                            "General.AddressData metric '%s' collides with General field '%s'",
-                            key_name,
-                            key_name,
-                        )
-                    metrics[key_name] = value
-        for metric, raw_value in metrics.items():
-            value_float = _to_float(raw_value)
-            if value_float is not None:
-                yield {
-                    "symbol": symbol,
-                    "retrieval_date": retrieval_stamp,
-                    "section": section,
-                    "metric": metric,
-                    "value_float": value_float,
-                    "value_text": None,
-                    "value_type": "float",
-                }
-            elif raw_value is not None:
-                yield {
-                    "symbol": symbol,
-                    "retrieval_date": retrieval_stamp,
-                    "section": section,
-                    "metric": metric,
-                    "value_float": None,
-                    "value_text": str(raw_value),
-                    "value_type": "text",
-                }
+
+    def section_rows(section: str) -> Iterable[dict[str, object]]:
+        """Build metric rows for a section.
+
+        Args:
+            section (str): Section name to parse.
+
+        Returns:
+            Iterable[dict[str, object]]: Row dictionaries for insertion.
+        """
+        return _market_section_rows(symbol, retrieval_stamp, section, raw_data.get(section))
+
+    return mapcat(section_rows, sections)
+
+
+def _market_section_rows(
+    symbol: str,
+    retrieval_stamp: str,
+    section: str,
+    data: object,
+) -> list[dict[str, object]]:
+    """Build metric rows for a single payload section.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        section (str): Payload section name.
+        data (object): Raw section payload.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if not isinstance(data, Mapping):
+        return []
+    metrics = {
+        str(metric): raw_value
+        for metric, raw_value in data.items()
+        if not isinstance(raw_value, (dict, list))
+    }
+    if section == "General":
+        address_data = data.get("AddressData")
+        if isinstance(address_data, Mapping):
+            collisions = [str(key) for key in address_data.keys() if str(key) in metrics]
+            for key_name in collisions:
+                logger.info(
+                    "General.AddressData metric '%s' collides with General field '%s'",
+                    key_name,
+                    key_name,
+                )
+            metrics = {
+                **metrics,
+                **{str(key): value for key, value in address_data.items()},
+            }
+    base = {
+        "symbol": symbol,
+        "retrieval_date": retrieval_stamp,
+        "section": section,
+    }
+    rows = [
+        row
+        for metric, raw_value in metrics.items()
+        for row in [_typed_metric_row({**base, "metric": metric}, raw_value)]
+        if row is not None
+    ]
+    return rows
 
 
 def write_financial_facts(
@@ -872,30 +971,43 @@ def _iter_fact_rows(
     history_len = len(model.history)
     retrieval_stamp = retrieval_date.isoformat()
     all_items = [*model.history, *model.forecast]
-    for index, item in enumerate(all_items):
-        is_forecast = index >= history_len
-        filing_date = filing_dates.get(item.period, item.period)
-        fiscal_stamp = item.period.isoformat()
-        filing_stamp = filing_date.isoformat()
-        for statement, values in (
-            ("income", item.income),
-            ("balance", item.balance),
-            ("cash_flow", item.cash_flow),
-        ):
-            for line_item, value in values.items():
-                yield {
-                    "symbol": symbol,
-                    "fiscal_date": fiscal_stamp,
-                    "filing_date": filing_stamp,
-                    "retrieval_date": retrieval_stamp,
-                    "period_type": period_type,
-                    "statement": statement,
-                    "line_item": line_item,
-                    "value_source": value_source,
-                    "value": value,
-                    "is_forecast": int(is_forecast),
-                    "provider": provider,
-                }
+    items_with_flags = (
+        (item, index >= history_len) for index, item in enumerate(all_items)
+    )
+    return (
+        {
+            "symbol": symbol,
+            "fiscal_date": item.period.isoformat(),
+            "filing_date": filing_dates.get(item.period, item.period).isoformat(),
+            "retrieval_date": retrieval_stamp,
+            "period_type": period_type,
+            "statement": statement,
+            "line_item": line_item,
+            "value_source": value_source,
+            "value": value,
+            "is_forecast": int(is_forecast),
+            "provider": provider,
+        }
+        for item, is_forecast in items_with_flags
+        for statement, values in _statement_maps(item)
+        for line_item, value in values.items()
+    )
+
+
+def _statement_maps(item: LineItems) -> tuple[tuple[str, Mapping[str, float | None]], ...]:
+    """Return statement/value mappings for a LineItems instance.
+
+    Args:
+        item (LineItems): LineItems instance to inspect.
+
+    Returns:
+        tuple[tuple[str, Mapping[str, float | None]], ...]: Statement/value pairs.
+    """
+    return (
+        ("income", item.income),
+        ("balance", item.balance),
+        ("cash_flow", item.cash_flow),
+    )
 
 
 def write_reported_facts(
@@ -1009,98 +1121,264 @@ def _iter_reported_rows(
         return []
 
     retrieval_stamp = retrieval_date.isoformat()
-    for period_type in ("yearly", "quarterly"):
-        for statement, key in (
-            ("income", "Income_Statement"),
-            ("balance", "Balance_Sheet"),
-            ("cash_flow", "Cash_Flow"),
-        ):
-            statement_block = financials.get(key, {})
-            if not isinstance(statement_block, Mapping):
-                continue
-            period_block = statement_block.get(period_type, {})
-            if not isinstance(period_block, Mapping):
-                continue
-            for fiscal_str, values in period_block.items():
-                if not isinstance(values, Mapping):
-                    continue
-                fiscal_date = _parse_date(fiscal_str)
-                if fiscal_date is None:
-                    continue
-                filing_date = _parse_date(values.get("filing_date")) or fiscal_date
-                period_label = "annual" if period_type == "yearly" else "quarterly"
-                fiscal_stamp = fiscal_date.isoformat()
-                filing_stamp = filing_date.isoformat()
-                for line_item, keys in field_map.items():
-                    raw_value = _first_value(values, keys)
-                    if raw_value is None:
-                        continue
-                    negative_items = STATEMENT_NEGATIVE_LINE_ITEMS.get(statement, set())
-                    value = -raw_value if line_item in negative_items else raw_value
-                    yield {
-                        "symbol": symbol,
-                        "fiscal_date": fiscal_stamp,
-                        "filing_date": filing_stamp,
-                        "retrieval_date": retrieval_stamp,
-                        "period_type": period_label,
-                        "statement": statement,
-                        "line_item": line_item,
-                        "value_source": "reported",
-                        "value": value,
-                        "is_forecast": 0,
-                        "provider": provider,
-                    }
-                for raw_key, raw_value in values.items():
-                    numeric_value = _to_float(raw_value)
-                    if numeric_value is None:
-                        continue
-                    yield {
-                        "symbol": symbol,
-                        "fiscal_date": fiscal_stamp,
-                        "filing_date": filing_stamp,
-                        "retrieval_date": retrieval_stamp,
-                        "period_type": period_label,
-                        "statement": statement,
-                        "line_item": str(raw_key),
-                        "value_source": "reported_raw",
-                        "value": numeric_value,
-                        "is_forecast": 0,
-                        "provider": provider,
-                    }
+    period_types = (("yearly", "annual"), ("quarterly", "quarterly"))
+    statement_keys = (
+        ("income", "Income_Statement"),
+        ("balance", "Balance_Sheet"),
+        ("cash_flow", "Cash_Flow"),
+    )
+    statement_rows = chain.from_iterable(
+        _iter_reported_statement_rows(
+            symbol=symbol,
+            provider=provider,
+            retrieval_stamp=retrieval_stamp,
+            period_label=period_label,
+            statement=statement,
+            period_block=_period_block(financials, key, period_key),
+            field_map=field_map,
+        )
+        for period_key, period_label in period_types
+        for statement, key in statement_keys
+    )
+    outstanding_rows = _iter_outstanding_rows(
+        symbol=symbol,
+        provider=provider,
+        retrieval_stamp=retrieval_stamp,
+        outstanding=raw_data.get("outstandingShares"),
+    )
+    return chain(statement_rows, outstanding_rows)
 
-    outstanding = raw_data.get("outstandingShares")
-    if isinstance(outstanding, Mapping):
-        for period_type, label in (("annual", "annual"), ("quarterly", "quarterly")):
-            block = outstanding.get(period_type)
-            if isinstance(block, Mapping):
-                entries = block.values()
-            elif isinstance(block, list):
-                entries = block
-            else:
-                continue
-            for entry in entries:
-                if not isinstance(entry, Mapping):
-                    continue
-                fiscal_date = _parse_date(entry.get("dateFormatted"))
-                if fiscal_date is None:
-                    continue
-                shares = _to_float(entry.get("shares"))
-                if shares is None:
-                    continue
-                fiscal_stamp = fiscal_date.isoformat()
-                yield {
-                    "symbol": symbol,
-                    "fiscal_date": fiscal_stamp,
-                    "filing_date": fiscal_stamp,
-                    "retrieval_date": retrieval_stamp,
-                    "period_type": label,
-                    "statement": "multi_statement",
-                    "line_item": "shares",
-                    "value_source": "reported",
-                    "value": shares,
-                    "is_forecast": 0,
-                    "provider": provider,
-                }
+
+def _period_block(
+    financials: Mapping[str, object],
+    key: str,
+    period_key: str,
+) -> Mapping[str, object] | None:
+    """Return a statement period block from the financials payload.
+
+    Args:
+        financials (Mapping[str, object]): Financials payload mapping.
+        key (str): Statement key (e.g., Income_Statement).
+        period_key (str): Period key ("yearly" or "quarterly").
+
+    Returns:
+        Mapping[str, object] | None: Period block mapping when available.
+    """
+    statement_block = financials.get(key)
+    if not isinstance(statement_block, Mapping):
+        return None
+    period_block = statement_block.get(period_key)
+    if not isinstance(period_block, Mapping):
+        return None
+    return period_block
+
+
+def _iter_reported_statement_rows(
+    symbol: str,
+    provider: str,
+    retrieval_stamp: str,
+    period_label: str,
+    statement: str,
+    period_block: Mapping[str, object] | None,
+    field_map: Mapping[str, tuple[str, ...]],
+) -> Iterable[dict[str, object]]:
+    """Yield reported rows for a single statement and period block.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        period_label (str): Period type label ("annual" or "quarterly").
+        statement (str): Statement identifier ("income", "balance", "cash_flow").
+        period_block (Mapping[str, object] | None): Period mapping for the statement.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if period_block is None:
+        return []
+    return chain.from_iterable(
+        _iter_reported_period_rows(
+            symbol=symbol,
+            provider=provider,
+            retrieval_stamp=retrieval_stamp,
+            period_label=period_label,
+            statement=statement,
+            fiscal_str=fiscal_str,
+            values=values,
+            field_map=field_map,
+        )
+        for fiscal_str, values in period_block.items()
+        if isinstance(values, Mapping)
+    )
+
+
+def _iter_reported_period_rows(
+    symbol: str,
+    provider: str,
+    retrieval_stamp: str,
+    period_label: str,
+    statement: str,
+    fiscal_str: str,
+    values: Mapping[str, object],
+    field_map: Mapping[str, tuple[str, ...]],
+) -> list[dict[str, object]]:
+    """Yield reported rows for a single fiscal period.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        period_label (str): Period type label ("annual" or "quarterly").
+        statement (str): Statement identifier ("income", "balance", "cash_flow").
+        fiscal_str (str): Fiscal date string.
+        values (Mapping[str, object]): Statement values for the period.
+        field_map (Mapping[str, tuple[str, ...]]): Provider field mapping.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    fiscal_date = _parse_date(fiscal_str)
+    if fiscal_date is None:
+        return []
+    filing_date = _parse_date(values.get("filing_date")) or fiscal_date
+    base = {
+        "symbol": symbol,
+        "fiscal_date": fiscal_date.isoformat(),
+        "filing_date": filing_date.isoformat(),
+        "retrieval_date": retrieval_stamp,
+        "period_type": period_label,
+        "statement": statement,
+        "is_forecast": 0,
+        "provider": provider,
+    }
+    negative_items = STATEMENT_NEGATIVE_LINE_ITEMS.get(statement, set())
+    mapped_rows = [
+        {
+            **base,
+            "line_item": line_item,
+            "value_source": "reported",
+            "value": -raw_value if line_item in negative_items else raw_value,
+        }
+        for line_item, keys in field_map.items()
+        for raw_value in [_first_value(values, keys)]
+        if raw_value is not None
+    ]
+    raw_rows = [
+        {
+            **base,
+            "line_item": str(raw_key),
+            "value_source": "reported_raw",
+            "value": numeric_value,
+        }
+        for raw_key, raw_value in values.items()
+        for numeric_value in [_to_float(raw_value)]
+        if numeric_value is not None
+    ]
+    return [*mapped_rows, *raw_rows]
+
+
+def _iter_outstanding_rows(
+    symbol: str,
+    provider: str,
+    retrieval_stamp: str,
+    outstanding: object,
+) -> list[dict[str, object]]:
+    """Yield reported rows for outstanding shares.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        outstanding (object): Outstanding shares payload.
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if not isinstance(outstanding, Mapping):
+        return []
+    period_types = (("annual", "annual"), ("quarterly", "quarterly"))
+
+    def period_rows(pair: tuple[str, str]) -> list[dict[str, object]]:
+        """Build outstanding shares rows for a period type.
+
+        Args:
+            pair (tuple[str, str]): Outstanding period key and label.
+
+        Returns:
+            list[dict[str, object]]: Row dictionaries for insertion.
+        """
+        period_key, label = pair
+        return _outstanding_period_rows(
+            symbol=symbol,
+            provider=provider,
+            retrieval_stamp=retrieval_stamp,
+            period_label=label,
+            block=outstanding.get(period_key),
+        )
+
+    return list(mapcat(period_rows, period_types))
+
+
+def _outstanding_period_rows(
+    symbol: str,
+    provider: str,
+    retrieval_stamp: str,
+    period_label: str,
+    block: object,
+) -> list[dict[str, object]]:
+    """Yield outstanding shares rows for a specific period type.
+
+    Args:
+        symbol (str): Ticker symbol for the payload.
+        provider (str): Provider name (e.g., "EODHD").
+        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        period_label (str): Period type label ("annual" or "quarterly").
+        block (object): Outstanding shares block (mapping or list).
+
+    Returns:
+        list[dict[str, object]]: Row dictionaries for insertion.
+    """
+    entries = _normalize_outstanding_block(block)
+    rows = [
+        {
+            "symbol": symbol,
+            "fiscal_date": fiscal_date.isoformat(),
+            "filing_date": fiscal_date.isoformat(),
+            "retrieval_date": retrieval_stamp,
+            "period_type": period_label,
+            "statement": "multi_statement",
+            "line_item": "shares",
+            "value_source": "reported",
+            "value": shares,
+            "is_forecast": 0,
+            "provider": provider,
+        }
+        for entry in entries
+        if isinstance(entry, Mapping)
+        for fiscal_date in [_parse_date(entry.get("dateFormatted"))]
+        if fiscal_date is not None
+        for shares in [_to_float(entry.get("shares"))]
+        if shares is not None
+    ]
+    return rows
+
+
+def _normalize_outstanding_block(block: object) -> Iterable[Mapping[str, object]]:
+    """Normalize outstanding shares blocks into an iterable of entries.
+
+    Args:
+        block (object): Outstanding shares block (mapping, list, or other).
+
+    Returns:
+        Iterable[Mapping[str, object]]: Iterable of entries.
+    """
+    if isinstance(block, Mapping):
+        return block.values()
+    if isinstance(block, list):
+        return block
+    return []
 
 
 def _filter_versioned_rows(
@@ -1135,22 +1413,27 @@ def _filter_versioned_rows(
         LIMIT 1
         """
     )
-    filtered: list[dict[str, object]] = []
-    for row in rows:
+    def _row_if_new(row: dict[str, object]) -> dict[str, object] | None:
+        """Return the row when it should be inserted as a new version.
+
+        Args:
+            row (dict[str, object]): Candidate row for insertion.
+
+        Returns:
+            dict[str, object] | None: Row to insert, or None when unchanged.
+        """
         match_params = {column: row.get(column) for column in match_columns}
         existing = conn.execute(query, match_params).mappings().first()
         if existing is None:
-            filtered.append(row)
-            continue
+            return row
         compare_columns = [
             column
             for column in row.keys()
             if column not in match_columns and column != retrieval_column
         ]
-        if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol):
-            continue
-        filtered.append(row)
-    return filtered
+        return None if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol) else row
+
+    return [row for row in map(_row_if_new, rows) if row is not None]
 
 
 def _rows_equal(
@@ -1172,15 +1455,15 @@ def _rows_equal(
     Returns:
         bool: True if rows are equivalent by column comparison.
     """
-    for column in compare_columns:
-        if not _values_equal(
+    return all(
+        _values_equal(
             existing.get(column),
             incoming.get(column),
             rel_tol=rel_tol,
             abs_tol=abs_tol,
-        ):
-            return False
-    return True
+        )
+        for column in compare_columns
+    )
 
 
 def _values_equal(value: object, other: object, rel_tol: float, abs_tol: float) -> bool:
@@ -1240,6 +1523,48 @@ def _normalize_text(value: object) -> str:
     return str(value).strip()
 
 
+def _typed_metric_row(
+    base: Mapping[str, object],
+    raw_value: object,
+) -> dict[str, object] | None:
+    """Build a typed metric row from a raw value.
+
+    Args:
+        base (Mapping[str, object]): Base row fields to include.
+        raw_value (object): Raw value to parse.
+
+    Returns:
+        dict[str, object] | None: Row dictionary or None when empty.
+    """
+    typed = _typed_value(raw_value)
+    if typed is None:
+        return None
+    value_type, value_float, value_text = typed
+    return {
+        **dict(base),
+        "value_float": value_float,
+        "value_text": value_text,
+        "value_type": value_type,
+    }
+
+
+def _typed_value(raw_value: object) -> tuple[str, float | None, str | None] | None:
+    """Normalize raw values into typed representations.
+
+    Args:
+        raw_value (object): Raw value to parse.
+
+    Returns:
+        tuple[str, float | None, str | None] | None: Type label and parsed values.
+    """
+    value_float = _to_float(raw_value)
+    if value_float is not None:
+        return "float", value_float, None
+    if raw_value is None:
+        return None
+    return "text", None, str(raw_value)
+
+
 def _first_value(values: Mapping[str, object], keys: tuple[str, ...]) -> float | None:
     """Return the first numeric value from a mapping by key preference.
 
@@ -1250,10 +1575,7 @@ def _first_value(values: Mapping[str, object], keys: tuple[str, ...]) -> float |
     Returns:
         float | None: Parsed numeric value, if present.
     """
-    for key in keys:
-        if key in values:
-            return _to_float(values.get(key))
-    return None
+    return next((_to_float(values.get(key)) for key in keys if key in values), None)
 
 
 def _to_float(value: object) -> float | None:

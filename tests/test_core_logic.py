@@ -3,6 +3,9 @@ from __future__ import annotations
 """Tests for core pure logic: history parsing and forecasting."""
 
 from datetime import date
+from operator import attrgetter
+
+from more_itertools import first
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
 from src.logic.forecasting import generate_forecast
@@ -42,7 +45,7 @@ def test_build_historic_model_minimal_payload() -> None:
 
     # Validate a handful of computed and mapped values.
     assert len(model.history) == 1
-    item = model.history[0]
+    item = first(model.history)
     assert item.period == date(2023, 12, 31)
     assert item.income["revenue"] == 200.0
     assert item.income["gross_profit"] == 80.0
@@ -141,10 +144,11 @@ def test_generate_forecast_balance_sheet_identity() -> None:
 
     # Each forecast period should satisfy the accounting identity.
     assert len(forecast_model.forecast) == 2
+    balances = map(attrgetter("balance"), forecast_model.forecast)
     assert all(
-        item.balance.get("total_assets")
-        == item.balance.get("total_liabilities") + item.balance.get("total_equity")
-        for item in forecast_model.forecast
+        balance.get("total_assets")
+        == balance.get("total_liabilities") + balance.get("total_equity")
+        for balance in balances
     )
 
 

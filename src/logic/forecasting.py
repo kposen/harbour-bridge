@@ -3,8 +3,13 @@ from __future__ import annotations
 """Forecast financial statements using simple averaged assumptions."""
 
 from datetime import date
-from functools import reduce
-from typing import Iterable
+from functools import partial, reduce
+from operator import attrgetter
+from typing import Callable, Iterable, Mapping
+
+from more_itertools import pairwise, tail
+from toolz import pipe
+from toolz.curried import get, map as cmap
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
 
@@ -14,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 AVERAGE_WINDOW = 4
 DEFAULT_FORECAST_YEARS = 6
+
+SECTION_GETTERS: dict[str, Callable[[LineItems], Mapping[str, float | None]]] = {
+    "income": attrgetter("income"),
+    "balance": attrgetter("balance"),
+    "cash_flow": attrgetter("cash_flow"),
+}
 
 
 def generate_forecast(history: FinancialModel, assumptions: Assumptions) -> FinancialModel:
@@ -26,7 +37,7 @@ def generate_forecast(history: FinancialModel, assumptions: Assumptions) -> Fina
     Returns:
         FinancialModel: A model with the same history and populated forecast.
     """
-    historic_items = sorted(history.history, key=lambda item: item.period)
+    historic_items = sorted(history.history, key=attrgetter("period"))
     if not historic_items:
         return FinancialModel(history=[], forecast=[])
 
@@ -72,11 +83,12 @@ def _build_growth_rates(history: list[LineItems], assumptions: Assumptions) -> d
     """
     revenue_growth = _average_growth(_series(history, "income", "revenue"))
     shares_growth = _average_growth(_series(history, "income", "shares_diluted"))
-
-    return {
-        "revenue": _override(assumptions.growth_rates, "revenue", revenue_growth, 0.0),
-        "shares_diluted": _override(assumptions.growth_rates, "shares_diluted", shares_growth, 0.0),
-    }
+    override = partial(_override, assumptions.growth_rates)
+    growth_specs = (
+        ("revenue", revenue_growth, 0.0),
+        ("shares_diluted", shares_growth, 0.0),
+    )
+    return {key: override(key, value, default) for key, value, default in growth_specs}
 
 
 def _build_balance_growth_rates(
@@ -115,13 +127,10 @@ def _build_balance_growth_rates(
         "minority_interest",
         "total_equity",
     )
+    override = partial(_override, assumptions.growth_rates)
+    series = partial(_series, history, "balance")
     return {
-        key: _override(
-            assumptions.growth_rates,
-            key,
-            _average_growth(_series(history, "balance", key)) or 0.0,
-            0.0,
-        )
+        key: override(key, _average_growth(series(key)) or 0.0, 0.0)
         for key in balance_keys
     }
 
@@ -137,48 +146,46 @@ def _build_ratios(history: list[LineItems], assumptions: Assumptions) -> dict[st
         dict[str, float]: Ratio values keyed by metric.
     """
     revenue = _series(history, "income", "revenue")
-
-    ratios = {
-        "gross_margin": _average_ratio(_series(history, "income", "gross_profit"), revenue),
-        "operating_margin": _average_ratio(_series(history, "income", "operating_income"), revenue),
-        "tax_rate": _average_ratio(_negate(_series(history, "income", "income_tax")), _series(history, "income", "pre_tax_income")),
-        "minorities_rate": _average_ratio(_series(history, "income", "minorities_expense"), _series(history, "income", "net_income")),
-        "preferred_dividends_ratio": _average_ratio(
-            _series(history, "income", "preferred_dividends"),
-            revenue,
+    ratio_of = partial(_average_ratio, denominators=revenue)
+    ratio_specs = {
+        "gross_margin": ratio_of(_series(history, "income", "gross_profit")),
+        "operating_margin": ratio_of(_series(history, "income", "operating_income")),
+        "tax_rate": _average_ratio(
+            _negate(_series(history, "income", "income_tax")),
+            _series(history, "income", "pre_tax_income"),
         ),
+        "minorities_rate": _average_ratio(
+            _series(history, "income", "minorities_expense"),
+            _series(history, "income", "net_income"),
+        ),
+        "preferred_dividends_ratio": ratio_of(_series(history, "income", "preferred_dividends")),
         "payout_ratio": _average_ratio(
             _negate(_series(history, "cash_flow", "dividends_paid")),
             _series(history, "income", "net_income_common"),
         ),
-        "depreciation_ratio": _average_ratio(_series(history, "income", "depreciation"), revenue),
-        "amortization_ratio": _average_ratio(_series(history, "income", "amortization"), revenue),
-        "interest_income_ratio": _average_ratio(_series(history, "income", "interest_income"), revenue),
-        "interest_expense_ratio": _average_ratio(_series(history, "income", "interest_expense"), revenue),
-        "other_non_operating_ratio": _average_ratio(
+        "depreciation_ratio": ratio_of(_series(history, "income", "depreciation")),
+        "amortization_ratio": ratio_of(_series(history, "income", "amortization")),
+        "interest_income_ratio": ratio_of(_series(history, "income", "interest_income")),
+        "interest_expense_ratio": ratio_of(_series(history, "income", "interest_expense")),
+        "other_non_operating_ratio": ratio_of(
             _series(history, "income", "other_non_operating_income"),
-            revenue,
         ),
-        "affiliates_ratio": _average_ratio(_series(history, "income", "affiliates_income"), revenue),
-        "capex_fixed_ratio": _average_ratio(_series(history, "cash_flow", "capex_fixed"), revenue),
-        "capex_other_ratio": _average_ratio(_series(history, "cash_flow", "capex_other"), revenue),
-        "sale_ppe_ratio": _average_ratio(_series(history, "cash_flow", "sale_ppe"), revenue),
-        "working_capital_ratio": _average_ratio(
+        "affiliates_ratio": ratio_of(_series(history, "income", "affiliates_income")),
+        "capex_fixed_ratio": ratio_of(_series(history, "cash_flow", "capex_fixed")),
+        "capex_other_ratio": ratio_of(_series(history, "cash_flow", "capex_other")),
+        "sale_ppe_ratio": ratio_of(_series(history, "cash_flow", "sale_ppe")),
+        "working_capital_ratio": ratio_of(
             _series(history, "cash_flow", "working_capital_change"),
-            revenue,
         ),
-        "other_cfo_ratio": _average_ratio(_series(history, "cash_flow", "other_cfo"), revenue),
-        "other_cfi_ratio": _average_ratio(_series(history, "cash_flow", "other_cfi"), revenue),
-        "share_purchases_ratio": _average_ratio(_series(history, "cash_flow", "share_purchases"), revenue),
-        "share_sales_ratio": _average_ratio(_series(history, "cash_flow", "share_sales"), revenue),
-        "debt_cash_flow_ratio": _average_ratio(_series(history, "cash_flow", "debt_cash_flow"), revenue),
-        "other_cff_ratio": _average_ratio(_series(history, "cash_flow", "other_cff"), revenue),
+        "other_cfo_ratio": ratio_of(_series(history, "cash_flow", "other_cfo")),
+        "other_cfi_ratio": ratio_of(_series(history, "cash_flow", "other_cfi")),
+        "share_purchases_ratio": ratio_of(_series(history, "cash_flow", "share_purchases")),
+        "share_sales_ratio": ratio_of(_series(history, "cash_flow", "share_sales")),
+        "debt_cash_flow_ratio": ratio_of(_series(history, "cash_flow", "debt_cash_flow")),
+        "other_cff_ratio": ratio_of(_series(history, "cash_flow", "other_cff")),
     }
-
-    return {
-        key: _override(assumptions.margins, key, value, 0.0)
-        for key, value in ratios.items()
-    }
+    override = partial(_override, assumptions.margins)
+    return {key: override(key, value, 0.0) for key, value in ratio_specs.items()}
 
 
 def _forecast_next_year(
@@ -203,13 +210,14 @@ def _forecast_next_year(
     logger.debug("Forecasting period %s", period.isoformat())
     # Revenue and shares are grown directly.
     revenue = _apply_growth(prior.income.get("revenue"), growth["revenue"])
+    scale_revenue = partial(_scale, revenue)
 
     # Income statement uses margin-based formulas.
-    gross_profit = _scale(revenue, ratios["gross_margin"])
+    gross_profit = scale_revenue(ratios["gross_margin"])
     gross_costs = _difference(gross_profit, revenue)
-    depreciation = _scale(revenue, ratios["depreciation_ratio"])
-    amortization = _scale(revenue, ratios["amortization_ratio"])
-    operating_income = _scale(revenue, ratios["operating_margin"])
+    depreciation = scale_revenue(ratios["depreciation_ratio"])
+    amortization = scale_revenue(ratios["amortization_ratio"])
+    operating_income = scale_revenue(ratios["operating_margin"])
     other_operating_expenses = _difference(
         operating_income,
         _sum_optional(gross_profit, depreciation, amortization),
@@ -217,9 +225,9 @@ def _forecast_next_year(
     ebitda = _difference(operating_income, _sum_optional(depreciation, amortization))
 
     # Non-operating items are modeled as ratios to revenue.
-    interest_income = _scale(revenue, ratios["interest_income_ratio"])
-    interest_expense = _scale(revenue, ratios["interest_expense_ratio"])
-    other_non_operating = _scale(revenue, ratios["other_non_operating_ratio"])
+    interest_income = scale_revenue(ratios["interest_income_ratio"])
+    interest_expense = scale_revenue(ratios["interest_expense_ratio"])
+    other_non_operating = scale_revenue(ratios["other_non_operating_ratio"])
     pre_tax_income = _sum_optional(
         operating_income,
         interest_income,
@@ -228,10 +236,11 @@ def _forecast_next_year(
     )
     # Taxes are modeled as a rate on pre-tax income (negative expense).
     income_tax = _scale(pre_tax_income, -ratios["tax_rate"]) if pre_tax_income is not None else None
-    affiliates_income = _scale(revenue, ratios["affiliates_ratio"])
+    affiliates_income = scale_revenue(ratios["affiliates_ratio"])
     net_income = _sum_optional(pre_tax_income, income_tax, affiliates_income)
-    minorities_expense = _scale(net_income, ratios["minorities_rate"])
-    preferred_dividends = _scale(revenue, ratios["preferred_dividends_ratio"])
+    scale_net_income = partial(_scale, net_income)
+    minorities_expense = scale_net_income(ratios["minorities_rate"])
+    preferred_dividends = scale_revenue(ratios["preferred_dividends_ratio"])
     net_income_common = _sum_optional(net_income, minorities_expense, preferred_dividends)
 
     shares_diluted = _apply_growth(prior.income.get("shares_diluted"), growth["shares_diluted"])
@@ -295,10 +304,13 @@ def _forecast_next_year(
         change_in_cash=cash_flow_items.get("change_in_cash"),
     )
     # Add helper balances used by cash flow.
-    balance_items["forecast_net_operating_working_capital"] = _operating_working_capital(balance_items)
-    balance_items["forecast_net_non_operating_working_capital"] = _non_operating_working_capital(
-        balance_items
-    )
+    balance_items = {
+        **balance_items,
+        "forecast_net_operating_working_capital": _operating_working_capital(balance_items),
+        "forecast_net_non_operating_working_capital": _non_operating_working_capital(
+            balance_items
+        ),
+    }
 
     return LineItems(period=period, income=income_items, balance=balance_items, cash_flow=cash_flow_items)
 
@@ -320,6 +332,7 @@ def _forecast_balance_sheet(
     Returns:
         dict[str, float | None]: Forecast balance sheet values.
     """
+    grow = _growth_from(prior_balance, growth)
     cash_short_term = (
         cash_short_term_override
         if cash_short_term_override is not None
@@ -330,21 +343,18 @@ def _forecast_balance_sheet(
         )
     )
     # Current assets built from component line items.
-    inventory = _apply_growth(prior_balance.get("inventory"), growth["inventory"])
-    receivables = _apply_growth(prior_balance.get("receivables"), growth["receivables"])
-    other_current_assets = _apply_growth(prior_balance.get("other_current_assets"), growth["other_current_assets"])
+    inventory = grow("inventory")
+    receivables = grow("receivables")
+    other_current_assets = grow("other_current_assets")
     current_assets = _sum_optional(cash_short_term, inventory, receivables, other_current_assets)
     if current_assets is None:
-        current_assets = _apply_growth(prior_balance.get("current_assets"), growth["current_assets"])
+        current_assets = grow("current_assets")
 
-    ppe_net = _apply_growth(prior_balance.get("ppe_net"), growth["ppe_net"])
-    software = _apply_growth(prior_balance.get("software"), growth["software"])
-    intangibles = _apply_growth(prior_balance.get("intangibles"), growth["intangibles"])
-    investments_lt = _apply_growth(prior_balance.get("long_term_investments"), growth["long_term_investments"])
-    other_non_current_assets = _apply_growth(
-        prior_balance.get("other_non_current_assets"),
-        growth["other_non_current_assets"],
-    )
+    ppe_net = grow("ppe_net")
+    software = grow("software")
+    intangibles = grow("intangibles")
+    investments_lt = grow("long_term_investments")
+    other_non_current_assets = grow("other_non_current_assets")
     # Non-current assets also roll forward from prior balances.
     total_non_current_assets = _sum_optional(
         ppe_net,
@@ -354,41 +364,38 @@ def _forecast_balance_sheet(
         other_non_current_assets,
     )
     if total_non_current_assets is None:
-        total_non_current_assets = _apply_growth(
-            prior_balance.get("total_non_current_assets"),
-            growth["total_non_current_assets"],
-        )
+        total_non_current_assets = grow("total_non_current_assets")
 
     # Total assets reconcile from current + non-current where possible.
     total_assets = _sum_optional(current_assets, total_non_current_assets)
     if total_assets is None:
-        total_assets = _apply_growth(prior_balance.get("total_assets"), growth["total_assets"])
+        total_assets = grow("total_assets")
 
-    accounts_payable = _apply_growth(prior_balance.get("accounts_payable"), growth["accounts_payable"])
-    debt_short_term = _apply_growth(prior_balance.get("debt_short_term"), growth["debt_short_term"])
-    debt_long_term = _apply_growth(prior_balance.get("debt_long_term"), growth["debt_long_term"])
-    current_liabilities = _apply_growth(prior_balance.get("current_liabilities"), growth["current_liabilities"])
+    accounts_payable = grow("accounts_payable")
+    debt_short_term = grow("debt_short_term")
+    debt_long_term = grow("debt_long_term")
+    current_liabilities = grow("current_liabilities")
     current_liabilities = _max_optional(
         current_liabilities,
         _sum_optional(accounts_payable, debt_short_term),
     )
 
     # Liabilities roll forward and are reconciled from components.
-    total_liabilities = _apply_growth(prior_balance.get("total_liabilities"), growth["total_liabilities"])
+    total_liabilities = grow("total_liabilities")
     total_liabilities = _max_optional(
         total_liabilities,
         _sum_optional(current_liabilities, debt_long_term),
     )
 
-    preferred_stock = _apply_growth(prior_balance.get("preferred_stock"), growth["preferred_stock"])
-    minority_interest = _apply_growth(prior_balance.get("minority_interest"), growth["minority_interest"])
+    preferred_stock = grow("preferred_stock")
+    minority_interest = grow("minority_interest")
     # Equity is the residual when assets and liabilities are present.
     total_equity = _difference(total_assets, total_liabilities)
     if total_equity is None:
-        total_equity = _apply_growth(prior_balance.get("total_equity"), growth["total_equity"])
+        total_equity = grow("total_equity")
     common_equity = _difference(total_equity, _sum_optional(preferred_stock, minority_interest))
     if common_equity is None:
-        common_equity = _apply_growth(prior_balance.get("common_equity"), growth["common_equity"])
+        common_equity = grow("common_equity")
 
     return {
         "cash_short_term_investments": cash_short_term,
@@ -440,15 +447,17 @@ def _forecast_cash_flow(
     Returns:
         dict[str, float | None]: Forecast cash flow line items.
     """
+    scale_revenue = partial(_scale, revenue)
     if operating_working_capital_change is None:
-        operating_working_capital_change = _scale(revenue, ratios["working_capital_ratio"])
+        operating_working_capital_change = scale_revenue(ratios["working_capital_ratio"])
     if non_operating_working_capital_change is None:
         non_operating_working_capital_change = 0.0
     # Cash-flow D&A should be positive add-backs.
-    depreciation_cfs = _scale(depreciation, -1.0)
-    amortization_cfs = _scale(amortization, -1.0)
+    negate = partial(_scale, ratio=-1.0)
+    depreciation_cfs = negate(depreciation)
+    amortization_cfs = negate(amortization)
     # Other CFO is treated as a revenue-based proxy.
-    other_cfo = _scale(revenue, ratios["other_cfo_ratio"])
+    other_cfo = scale_revenue(ratios["other_cfo_ratio"])
     cash_from_operations = _sum_optional(
         net_income,
         depreciation_cfs,
@@ -458,20 +467,20 @@ def _forecast_cash_flow(
         other_cfo,
     )
 
-    capex_fixed = _scale(revenue, ratios["capex_fixed_ratio"])
-    capex_other = _scale(revenue, ratios["capex_other_ratio"])
-    sale_ppe = _scale(revenue, ratios["sale_ppe_ratio"])
-    other_cfi = _scale(revenue, ratios["other_cfi_ratio"])
+    capex_fixed = scale_revenue(ratios["capex_fixed_ratio"])
+    capex_other = scale_revenue(ratios["capex_other_ratio"])
+    sale_ppe = scale_revenue(ratios["sale_ppe_ratio"])
+    other_cfi = scale_revenue(ratios["other_cfi_ratio"])
     forecast_total_capex = _sum_optional(capex_fixed, capex_other)
     cash_from_investing = _sum_optional(capex_fixed, capex_other, sale_ppe, other_cfi)
 
     # Financing uses payout ratios and revenue-based proxies.
     payout_ratio = ratios["payout_ratio"]
     dividends_paid = _scale(net_income_common, -payout_ratio) if net_income_common is not None else None
-    share_purchases = _scale(revenue, ratios["share_purchases_ratio"])
-    share_sales = _scale(revenue, ratios["share_sales_ratio"])
-    debt_cash_flow = _scale(revenue, ratios["debt_cash_flow_ratio"])
-    other_cff = _scale(revenue, ratios["other_cff_ratio"])
+    share_purchases = scale_revenue(ratios["share_purchases_ratio"])
+    share_sales = scale_revenue(ratios["share_sales_ratio"])
+    debt_cash_flow = scale_revenue(ratios["debt_cash_flow_ratio"])
+    other_cff = scale_revenue(ratios["other_cff_ratio"])
     cash_from_financing = _sum_optional(
         dividends_paid,
         share_purchases,
@@ -522,13 +531,10 @@ def _series(history: list[LineItems], section: str, key: str) -> list[float | No
     Returns:
         list[float | None]: Sequence of values for the key.
     """
-    if section == "income":
-        return [item.income.get(key) for item in history]
-    if section == "balance":
-        return [item.balance.get(key) for item in history]
-    if section == "cash_flow":
-        return [item.cash_flow.get(key) for item in history]
-    return []
+    getter = SECTION_GETTERS.get(section)
+    if getter is None:
+        return []
+    return list(pipe(history, cmap(getter), cmap(get(key))))
 
 
 def _average_growth(values: list[float | None]) -> float | None:
@@ -542,7 +548,7 @@ def _average_growth(values: list[float | None]) -> float | None:
     """
     rates = [
         current / prior - 1
-        for prior, current in zip(values[:-1], values[1:])
+        for prior, current in pairwise(values)
         if prior not in (None, 0) and current is not None
     ]
     return _average_tail(rates)
@@ -576,11 +582,10 @@ def _average_tail(values: Iterable[float], window: int = AVERAGE_WINDOW) -> floa
     Returns:
         float | None: Average of the trailing window, if any.
     """
-    values_list = list(values)
-    if not values_list:
+    tail_values = list(tail(window, values))
+    if not tail_values:
         return None
-    tail = values_list[-window:]
-    return sum(tail) / len(tail)
+    return sum(tail_values) / len(tail_values)
 
 
 def _override(source: dict[str, float], key: str, value: float | None, default: float) -> float:
@@ -641,9 +646,10 @@ def _sum_optional(*values: float | None) -> float | None:
     Returns:
         float | None: Sum of values, or None when all missing.
     """
-    if all(value is None for value in values):
+    present = [value for value in values if value is not None]
+    if not present:
         return None
-    return sum(value or 0.0 for value in values)
+    return sum(present)
 
 
 def _difference(value: float | None, other: float | None) -> float | None:
@@ -688,6 +694,33 @@ def _negate(values: list[float | None]) -> list[float | None]:
         list[float | None]: Negated values.
     """
     return [None if value is None else -value for value in values]
+
+
+def _growth_from(
+    prior_balance: dict[str, float | None],
+    growth: dict[str, float],
+) -> Callable[[str], float | None]:
+    """Curry a balance sheet and growth map into a growth lookup function.
+
+    Args:
+        prior_balance (dict[str, float | None]): Prior balance sheet values.
+        growth (dict[str, float]): Growth rates keyed by line item.
+
+    Returns:
+        Callable[[str], float | None]: Function that grows a specific key.
+    """
+    def grow(key: str) -> float | None:
+        """Apply growth to a specific balance sheet key.
+
+        Args:
+            key (str): Balance sheet line item key.
+
+        Returns:
+            float | None: Grown value for the key, if present.
+        """
+        return _apply_growth(prior_balance.get(key), growth[key])
+
+    return grow
 
 
 def _operating_working_capital(balance: dict[str, float | None]) -> float | None:
