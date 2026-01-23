@@ -39,6 +39,10 @@ shell.
 - `HARBOUR_BRIDGE_DB_URL`: Optional. Postgres connection string
   (e.g., `postgresql+psycopg://user:pass@localhost:5432/harbour_bridge`).
   Requires the `psycopg` driver (included in `requirements.txt`).
+- `database.require_db`: Optional. When true, the pipeline will abort if
+  `HARBOUR_BRIDGE_DB_URL` is not set.
+- `calendar.lookahead_days`: Optional. Days to fetch corporate action calendars
+  (capped at 30 by the pipeline).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 
@@ -65,6 +69,10 @@ includes symbol, fiscal date, filing date, retrieval date, period type,
 statement, line item, and value source to preserve versions and reported vs
 calculated values. The primary key for `prices` includes symbol, date,
 retrieval_date, and provider for versioned price history.
+
+When `HARBOUR_BRIDGE_DB_URL` is set, the pipeline runs preflight checks before
+downloading data. This validates connectivity and performs a write/read/delete
+round-trip against a scratch table named `pipeline_scratch`. Failures abort the run.
 
 ## Notes
 

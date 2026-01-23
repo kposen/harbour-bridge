@@ -10,12 +10,14 @@ from typing import Any
 
 import requests
 
+from src.config import get_calendar_lookahead_days, get_database_required
 from src.domain.schemas import Assumptions
 from src.io.database import (
     ensure_schema,
     get_engine,
     get_latest_filing_date,
     get_latest_price_date,
+    run_database_preflight,
     write_corporate_actions_calendar,
     write_holders,
     write_financial_facts,
@@ -253,14 +255,32 @@ def run_pipeline(results_dir: Path) -> None:
     logger.info("Created data directory: %s", data_dir)
     database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
     engine = get_engine(database_url) if database_url else None
+    logger.info("Starting preflight checks")
+    database_required = get_database_required()
     if engine is None:
-        logger.info("HARBOUR_BRIDGE_DB_URL not set; skipping database writes")
+        if database_required:
+            logger.error("HARBOUR_BRIDGE_DB_URL is required but not set; aborting pipeline")
+            sys.exit(1)
+        logger.info("HARBOUR_BRIDGE_DB_URL not set; skipping database preflight checks")
     else:
         logger.info("Using Postgres database connection from HARBOUR_BRIDGE_DB_URL")
-        ensure_schema(engine)
+        try:
+            ensure_schema(engine)
+            run_database_preflight(engine)
+        except Exception as exc:
+            logger.exception("Database preflight failed; aborting pipeline: %s", exc)
+            sys.exit(1)
+    logger.info("Preflight checks complete")
     calendar_retrieval = datetime.now(UTC)
     calendar_start = calendar_retrieval.date()
-    calendar_end = calendar_start + timedelta(days=29)
+    calendar_lookahead = get_calendar_lookahead_days()
+    if calendar_lookahead > 30:
+        logger.warning(
+            "Calendar look-ahead of %d days exceeds max 30; using 30",
+            calendar_lookahead,
+        )
+        calendar_lookahead = 30
+    calendar_end = calendar_start + timedelta(days=calendar_lookahead - 1)
     upcoming_earnings = fetch_upcoming_earnings(calendar_start, calendar_end)
     if upcoming_earnings is not None:
         save_upcoming_earnings_payload(data_dir, upcoming_earnings)
@@ -272,7 +292,7 @@ def run_pipeline(results_dir: Path) -> None:
     else:
         logger.info("Skipping upcoming splits payload save due to fetch error")
     dividend_payloads: list[object] = []
-    for offset in range(30):
+    for offset in range(calendar_lookahead):
         payload_date = calendar_start + timedelta(days=offset)
         dividend_payload = fetch_upcoming_dividends(payload_date)
         if dividend_payload is not None:

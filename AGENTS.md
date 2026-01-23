@@ -18,6 +18,10 @@
 - Run pipeline: `python main.py` (requires `EODHD_API_KEY`).
 - Optional Postgres persistence via `HARBOUR_BRIDGE_DB_URL`.
 - Configure float comparison tolerances in `config.toml`.
+- Configure calendar lookahead days in `config.toml` (`calendar.lookahead_days`, capped at 30).
+- Use `database.require_db = true` in `config.toml` to require `HARBOUR_BRIDGE_DB_URL`.
+- When `HARBOUR_BRIDGE_DB_URL` is set, preflight checks validate DB connectivity and
+  run a write/read/delete round-trip on `pipeline_scratch` before downloads.
 
 ## Coding Style & Naming Conventions
 - Target Python 3.12+ and use strict type hinting throughout the codebase.

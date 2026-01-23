@@ -10,6 +10,8 @@ import tomllib
 
 DEFAULT_REL_TOL = 1e-4
 DEFAULT_ABS_TOL = 1e-6
+DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 30
+DEFAULT_REQUIRE_DB = False
 
 _CONFIG_CACHE: dict[str, Any] | None = None
 
@@ -49,6 +51,34 @@ def get_database_tolerances() -> tuple[float, float]:
     return rel_tol, abs_tol
 
 
+def get_database_required() -> bool:
+    """Return whether database configuration is required.
+
+    Args:
+        None
+
+    Returns:
+        bool: True when the pipeline must have a database configured.
+    """
+    config = load_config()
+    database = config.get("database", {}) if isinstance(config, dict) else {}
+    return _coerce_bool(database.get("require_db"), DEFAULT_REQUIRE_DB)
+
+
+def get_calendar_lookahead_days() -> int:
+    """Return the look-ahead window for corporate actions calendars.
+
+    Args:
+        None
+
+    Returns:
+        int: Look-ahead window in days.
+    """
+    config = load_config()
+    calendar = config.get("calendar", {}) if isinstance(config, dict) else {}
+    return _coerce_int(calendar.get("lookahead_days"), DEFAULT_CALENDAR_LOOKAHEAD_DAYS)
+
+
 def _coerce_float(value: object, default: float) -> float:
     """Coerce a value to float with a default fallback.
 
@@ -63,3 +93,26 @@ def _coerce_float(value: object, default: float) -> float:
         return float(value) if value is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _coerce_int(value: object, default: int) -> int:
+    """Coerce a value to int with a default fallback."""
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_bool(value: object, default: bool) -> bool:
+    """Coerce a value to bool with a default fallback."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default

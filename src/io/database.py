@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from functools import partial
 from itertools import chain
 from typing import Iterable, Mapping
@@ -47,6 +47,7 @@ PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
 }
 
 RETRIEVAL_COLUMN = "retrieval_date"
+SCRATCH_TABLE = "pipeline_scratch"
 
 
 def get_engine(database_url: str) -> Engine:
@@ -638,6 +639,77 @@ def write_listings(
         logger.info("Writing %d listing rows", len(rows_to_insert))
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
+
+
+def run_database_preflight(engine: Engine) -> None:
+    """Run database connectivity and scratch-table tests.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+
+    Returns:
+        None: Raises RuntimeError when critical checks fail.
+    """
+    logger.info("Running database preflight checks")
+    _assert_db_connectivity(engine)
+    _assert_scratch_table_roundtrip(engine)
+    logger.info("Database preflight checks passed")
+
+
+def _assert_db_connectivity(engine: Engine) -> None:
+    """Ensure the database connection is healthy."""
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1")).scalar()
+    except Exception as exc:
+        raise RuntimeError("Database connectivity check failed") from exc
+    if result != 1:
+        raise RuntimeError("Database connectivity check returned unexpected result")
+
+
+def _assert_scratch_table_roundtrip(engine: Engine) -> None:
+    """Ensure the scratch table supports write/read/delete operations."""
+    token = f"preflight-{datetime.now(UTC).isoformat()}"
+    created_at = datetime.now(UTC)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {SCRATCH_TABLE} (
+                        token TEXT PRIMARY KEY,
+                        created_at TIMESTAMPTZ NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {SCRATCH_TABLE} (token, created_at)
+                    VALUES (:token, :created_at)
+                    """
+                ),
+                {"token": token, "created_at": created_at},
+            )
+            fetched = conn.execute(
+                text(f"SELECT token FROM {SCRATCH_TABLE} WHERE token = :token"),
+                {"token": token},
+            ).scalar()
+            if fetched != token:
+                raise RuntimeError("Scratch table read verification failed")
+            conn.execute(
+                text(f"DELETE FROM {SCRATCH_TABLE} WHERE token = :token"),
+                {"token": token},
+            )
+            remaining = conn.execute(
+                text(f"SELECT COUNT(*) FROM {SCRATCH_TABLE} WHERE token = :token"),
+                {"token": token},
+            ).scalar()
+            if remaining not in (0, None):
+                raise RuntimeError("Scratch table delete verification failed")
+    except Exception as exc:
+        raise RuntimeError("Scratch table round-trip failed") from exc
 
 
 def write_corporate_actions_calendar(
