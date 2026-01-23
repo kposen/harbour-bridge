@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, date, datetime
 from functools import partial
@@ -48,6 +49,23 @@ PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
 
 RETRIEVAL_COLUMN = "retrieval_date"
 SCRATCH_TABLE = "pipeline_scratch"
+EXCHANGE_LIST_TABLE = "exchange_list"
+EXCHANGE_LIST_COLUMNS = (
+    "name",
+    "operating_mic",
+    "country",
+    "currency",
+    "country_iso2",
+    "country_iso3",
+)
+EXCHANGE_LIST_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    "name": ("Name", "name"),
+    "operating_mic": ("OperatingMIC", "operating_mic", "operatingMIC"),
+    "country": ("Country", "country"),
+    "currency": ("Currency", "currency"),
+    "country_iso2": ("CountryISO2", "country_iso2", "countryISO2"),
+    "country_iso3": ("CountryISO3", "country_iso3", "countryISO3"),
+}
 
 
 def get_engine(database_url: str) -> Engine:
@@ -249,6 +267,19 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
         ON prices (symbol, date);
+    CREATE TABLE IF NOT EXISTS exchange_list (
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NULL,
+        operating_mic TEXT NULL,
+        country TEXT NULL,
+        currency TEXT NULL,
+        country_iso2 TEXT NULL,
+        country_iso3 TEXT NULL,
+        PRIMARY KEY (retrieval_date, code)
+    );
+    CREATE INDEX IF NOT EXISTS IX_exchange_list_code
+        ON exchange_list (code);
     CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
         symbol TEXT NOT NULL,
         date_retrieved TIMESTAMPTZ NOT NULL,
@@ -641,6 +672,51 @@ def write_listings(
     return len(rows_to_insert)
 
 
+def write_exchange_list(
+    engine: Engine,
+    retrieval_date: datetime,
+    payload: object | None,
+) -> int:
+    """Write exchange list rows to the exchange_list table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw exchange list payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = _exchange_rows(retrieval_date, payload)
+    if not rows:
+        return 0
+    columns = ["code", RETRIEVAL_COLUMN, *EXCHANGE_LIST_COLUMNS]
+    insert_sql = text(
+        f"""
+        INSERT INTO {EXCHANGE_LIST_TABLE} (
+            {", ".join(columns)}
+        )
+        VALUES (
+            {", ".join(f":{column}" for column in columns)}
+        )
+        """
+    )
+    with engine.begin() as conn:
+        rows = [{column: row.get(column) for column in columns} for row in rows]
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table=EXCHANGE_LIST_TABLE,
+            rows=rows,
+            match_columns=("code",),
+            retrieval_column=RETRIEVAL_COLUMN,
+        )
+        if not rows_to_insert:
+            return 0
+        logger.info("Writing %d exchange list rows", len(rows_to_insert))
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
+
+
 def run_database_preflight(engine: Engine) -> None:
     """Run database connectivity and scratch-table tests.
 
@@ -829,6 +905,78 @@ def write_corporate_actions_calendar(
                 conn.execute(insert_sql, rows_to_insert)
                 inserted += len(rows_to_insert)
     return inserted
+
+
+def _exchange_rows(
+    retrieval_date: datetime,
+    payload: object | None,
+) -> list[dict[str, object]]:
+    """Build exchange list rows from the payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw exchange list payload.
+
+    Returns:
+        list[dict[str, object]]: Exchange list rows keyed by static columns.
+    """
+    if payload is None:
+        return []
+    entries = _exchange_entries(payload)
+    if not entries:
+        return []
+    rows: list[dict[str, object]] = []
+    for entry in entries:
+        code = _normalize_exchange_code(entry)
+        if code is None:
+            continue
+        row = {
+            RETRIEVAL_COLUMN: retrieval_date,
+            "code": code,
+        }
+        for column, keys in EXCHANGE_LIST_FIELD_MAP.items():
+            row[column] = _normalize_exchange_value(_first_present(entry, keys))
+        rows.append(row)
+    return rows
+
+
+def _exchange_entries(payload: object) -> list[Mapping[str, object]]:
+    """Normalize exchange list payloads into a list of entries."""
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, Mapping)]
+    if isinstance(payload, Mapping):
+        exchanges = payload.get("exchanges")
+        data = payload.get("data")
+        if isinstance(exchanges, list):
+            return [entry for entry in exchanges if isinstance(entry, Mapping)]
+        if isinstance(data, list):
+            return [entry for entry in data if isinstance(entry, Mapping)]
+        return [entry for entry in payload.values() if isinstance(entry, Mapping)]
+    return []
+
+
+def _normalize_exchange_code(entry: Mapping[str, object]) -> str | None:
+    """Extract and normalize the exchange code from a payload entry."""
+    raw_code = _first_present(entry, ("Code", "code", "CODE"))
+    if isinstance(raw_code, str):
+        stripped = raw_code.strip()
+        return stripped.upper() if stripped else None
+    return None
+
+
+def _normalize_exchange_value(value: object) -> object | None:
+    """Normalize exchange list values into safe scalar values."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
 
 
 def _iter_earnings_calendar_rows(

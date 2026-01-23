@@ -19,6 +19,7 @@ from src.io.database import (
     get_latest_price_date,
     run_database_preflight,
     write_corporate_actions_calendar,
+    write_exchange_list,
     write_holders,
     write_financial_facts,
     write_earnings,
@@ -31,6 +32,7 @@ from src.io.database import (
 from src.io.reporting import export_model_to_excel
 from src.io.storage import (
     build_run_data_dir,
+    save_exchanges_list_payload,
     save_upcoming_dividends_payload,
     save_upcoming_earnings_payload,
     save_upcoming_splits_payload,
@@ -234,6 +236,37 @@ def fetch_upcoming_dividends(payload_date: date) -> object | None:
     return payload
 
 
+def fetch_exchange_list() -> object | None:
+    """Fetch the provider exchange list."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    logger.info("Fetching exchanges list")
+    try:
+        response = requests.get(
+            "https://eodhd.com/api/exchanges-list/",
+            params={"api_token": api_key, "fmt": "json"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("Exchange list request failed: %s", exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode exchange list JSON: %s", exc)
+        return None
+    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+        logger.info("EODHD exchange list error payload: %s", payload)
+        return None
+    if not isinstance(payload, (list, dict)):
+        logger.info("EODHD exchange list response did not return JSON rows")
+        return None
+    if isinstance(payload, list):
+        logger.debug("Received %d exchange list entries", len(payload))
+    return payload
+
+
 def run_pipeline(results_dir: Path) -> None:
     """Run the imperative pipeline: fetch -> build history -> forecast -> save.
 
@@ -281,6 +314,11 @@ def run_pipeline(results_dir: Path) -> None:
         )
         calendar_lookahead = 30
     calendar_end = calendar_start + timedelta(days=calendar_lookahead - 1)
+    exchange_payload = fetch_exchange_list()
+    if exchange_payload is not None:
+        save_exchanges_list_payload(data_dir, exchange_payload)
+    else:
+        logger.info("Skipping exchanges list payload save due to fetch error")
     upcoming_earnings = fetch_upcoming_earnings(calendar_start, calendar_end)
     if upcoming_earnings is not None:
         save_upcoming_earnings_payload(data_dir, upcoming_earnings)
@@ -301,6 +339,13 @@ def run_pipeline(results_dir: Path) -> None:
         else:
             logger.info("Skipping upcoming dividends payload save for %s due to fetch error", payload_date)
     if engine is not None:
+        exchange_inserted = write_exchange_list(
+            engine=engine,
+            retrieval_date=calendar_retrieval,
+            payload=exchange_payload,
+        )
+        if exchange_inserted == 0:
+            logger.info("No exchange list rows inserted")
         inserted = write_corporate_actions_calendar(
             engine=engine,
             retrieval_date=calendar_retrieval,

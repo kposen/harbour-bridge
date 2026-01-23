@@ -122,6 +122,21 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
     ON prices (symbol, date);
 
+CREATE TABLE IF NOT EXISTS exchange_list (
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NULL,
+    operating_mic TEXT NULL,
+    country TEXT NULL,
+    currency TEXT NULL,
+    country_iso2 TEXT NULL,
+    country_iso3 TEXT NULL,
+    PRIMARY KEY (retrieval_date, code)
+);
+
+CREATE INDEX IF NOT EXISTS IX_exchange_list_code
+    ON exchange_list (code);
+
 CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
     symbol TEXT NOT NULL,
     date_retrieved TIMESTAMPTZ NOT NULL,

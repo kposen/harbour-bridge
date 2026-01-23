@@ -58,7 +58,8 @@ shell.
 7. **Calendars**: Upcoming earnings, splits, and dividends are fetched each run.
 8. **Raw payloads**: Stored under `data/<timestamp>` for each run, including
    `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`,
-   `upcoming-splits.json`, and `upcoming-dividends-YYYY-MM-DD.json`.
+   `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`, and
+   `exchanges-list.json`.
 
 ## Database Storage (Optional)
 
@@ -73,6 +74,9 @@ retrieval_date, and provider for versioned price history.
 When `HARBOUR_BRIDGE_DB_URL` is set, the pipeline runs preflight checks before
 downloading data. This validates connectivity and performs a write/read/delete
 round-trip against a scratch table named `pipeline_scratch`. Failures abort the run.
+The exchange list is stored in `exchange_list` with explicit columns for
+`name`, `operating_mic`, `country`, `currency`, `country_iso2`, and
+`country_iso3`.
 
 ## Notes
 

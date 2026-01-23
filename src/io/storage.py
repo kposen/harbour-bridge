@@ -167,6 +167,22 @@ def save_upcoming_dividends_payload(run_dir: Path, payload_date: date, payload: 
     return path
 
 
+def save_exchanges_list_payload(run_dir: Path, payload: object) -> Path:
+    """Persist the exchanges list payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        payload (object): Raw provider payload for exchanges list.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    path = run_dir / "exchanges-list.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved exchanges list payload to %s", path)
+    return path
+
+
 def _normalize_ticker(ticker: str) -> str:
     """Normalize ticker symbols for consistent filenames.
 
