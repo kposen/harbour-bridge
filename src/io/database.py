@@ -767,6 +767,7 @@ def _iter_earnings_calendar_rows(
                     (
                         "fiscal_date",
                         "fiscalDate",
+                        "date",
                         "period_end",
                         "period_end_date",
                         "period",
@@ -1999,8 +2000,14 @@ def _calendar_entries(payload: object) -> Iterable[Mapping[str, object]]:
         entries = [entry for entry in payload if isinstance(entry, Mapping)]
     elif isinstance(payload, Mapping):
         data = payload.get("data")
+        earnings = payload.get("earnings")
+        splits = payload.get("splits")
         if isinstance(data, list):
             entries = [entry for entry in data if isinstance(entry, Mapping)]
+        elif isinstance(earnings, list):
+            entries = [entry for entry in earnings if isinstance(entry, Mapping)]
+        elif isinstance(splits, list):
+            entries = [entry for entry in splits if isinstance(entry, Mapping)]
         else:
             entries = [entry for entry in payload.values() if isinstance(entry, Mapping)]
     else:
