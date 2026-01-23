@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tests for end-of-day price ingestion and storage."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -51,8 +51,8 @@ def _price_entry(
     }
 
 
-def test_get_latest_price_date_parses_sqlite_text() -> None:
-    """Latest price date should parse from SQLite text columns.
+def test_get_latest_price_date_parses_dates() -> None:
+    """Latest price date should parse from stored date columns.
 
     Args:
         None
@@ -96,8 +96,8 @@ def test_get_latest_price_date_parses_sqlite_text() -> None:
             [
                 {
                     "symbol": "AAPL.US",
-                    "date": "2025-01-01",
-                    "retrieval_date": "2025-01-02T00:00:00",
+                    "date": date(2025, 1, 1),
+                    "retrieval_date": datetime(2025, 1, 2, tzinfo=UTC),
                     "provider": "EODHD",
                     "open": 10.0,
                     "high": 12.0,
@@ -108,8 +108,8 @@ def test_get_latest_price_date_parses_sqlite_text() -> None:
                 },
                 {
                     "symbol": "AAPL.US",
-                    "date": "2025-02-01",
-                    "retrieval_date": "2025-02-02T00:00:00",
+                    "date": date(2025, 2, 1),
+                    "retrieval_date": datetime(2025, 2, 2, tzinfo=UTC),
                     "provider": "EODHD",
                     "open": 20.0,
                     "high": 21.0,
@@ -141,14 +141,14 @@ def test_write_prices_dedups_identical_versions() -> None:
         engine=engine,
         symbol="AAPL.US",
         provider="EODHD",
-        retrieval_date=datetime(2025, 2, 1),
+        retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=payload,
     )
     second = write_prices(
         engine=engine,
         symbol="AAPL.US",
         provider="EODHD",
-        retrieval_date=datetime(2025, 2, 2),
+        retrieval_date=datetime(2025, 2, 2, tzinfo=UTC),
         raw_data=payload,
     )
 
@@ -176,7 +176,7 @@ def test_write_prices_inserts_on_value_change() -> None:
         engine=engine,
         symbol="AAPL.US",
         provider="EODHD",
-        retrieval_date=datetime(2025, 2, 1),
+        retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=payload,
     )
     updated_payload = [_price_entry("2025-01-01", close_value="11.5")]
@@ -184,7 +184,7 @@ def test_write_prices_inserts_on_value_change() -> None:
         engine=engine,
         symbol="AAPL.US",
         provider="EODHD",
-        retrieval_date=datetime(2025, 2, 2),
+        retrieval_date=datetime(2025, 2, 2, tzinfo=UTC),
         raw_data=updated_payload,
     )
 
@@ -212,13 +212,13 @@ def test_iter_price_rows_accepts_mapping_payload() -> None:
         _iter_price_rows(
             symbol="AAPL.US",
             provider="EODHD",
-            retrieval_date=datetime(2025, 2, 1),
+            retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
             raw_data=payload,
         )
     )
     # Ensure both entries are parsed and dates are preserved.
     dates = {row["date"] for row in rows}
-    assert dates == {"2025-01-01", "2025-01-02"}
+    assert dates == {date(2025, 1, 1), date(2025, 1, 2)}
 
 
 def test_fetch_prices_uses_from_param(monkeypatch) -> None:
@@ -328,7 +328,7 @@ def test_price_start_date_uses_latest_date() -> None:
         engine=engine,
         symbol="AAPL.US",
         provider="EODHD",
-        retrieval_date=datetime(2025, 2, 1),
+        retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=[_price_entry("2025-01-01")],
     )
     start_date = main._price_start_date(engine, "AAPL.US", "EODHD")

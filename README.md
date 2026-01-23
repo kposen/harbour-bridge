@@ -36,8 +36,9 @@ shell.
 
 - `EODHD_API_KEY`: Required. Used by `fetch_data` to call the EODHD fundamentals
   endpoint.
-- `SQLITE_DB_PATH`: Optional. Filesystem path to a SQLite database
-  (e.g., `data/financials.sqlite`).
+- `HARBOUR_BRIDGE_DB_URL`: Optional. Postgres connection string
+  (e.g., `postgresql+psycopg://user:pass@localhost:5432/harbour_bridge`).
+  Requires the `psycopg` driver (included in `requirements.txt`).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 
@@ -55,8 +56,8 @@ shell.
 
 ## Database Storage (Optional)
 
-If you want to persist normalized facts to SQLite, apply the schema in
-`docs/sql/schema.sql` and use the helpers in `src/io/database.py` to insert rows
+If you want to persist normalized facts to Postgres, apply the schema in
+`docs/sql/schema.sql`, set `HARBOUR_BRIDGE_DB_URL`, and use the helpers in `src/io/database.py` to insert rows
 into `financial_facts` and `prices`. The primary key for `financial_facts`
 includes symbol, fiscal date, filing date, retrieval date, period type,
 statement, line item, and value source to preserve versions and reported vs

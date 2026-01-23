@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tests for database ingestion helpers and staleness logic."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import create_engine, text
 
@@ -10,8 +10,8 @@ import main
 from src.io.database import _iter_reported_rows, ensure_schema, get_latest_filing_date
 
 
-def test_staleness_logic_with_sqlite_dates() -> None:
-    """Staleness logic should parse ISO dates from SQLite text columns.
+def test_staleness_logic_with_date_columns() -> None:
+    """Staleness logic should parse stored dates from the database.
 
     Args:
         None
@@ -55,15 +55,15 @@ def test_staleness_logic_with_sqlite_dates() -> None:
             ),
             {
                 "symbol": "TEST.US",
-                "fiscal_date": "2024-12-31",
-                "filing_date": "2025-01-15",
-                "retrieval_date": "2025-02-01T00:00:00",
+                "fiscal_date": date(2024, 12, 31),
+                "filing_date": date(2025, 1, 15),
+                "retrieval_date": datetime(2025, 2, 1, tzinfo=UTC),
                 "period_type": "annual",
                 "statement": "income",
                 "line_item": "revenue",
                 "value_source": "reported",
                 "value": 100.0,
-                "is_forecast": 0,
+                "is_forecast": False,
                 "provider": "EODHD",
             },
         )
@@ -75,7 +75,7 @@ def test_staleness_logic_with_sqlite_dates() -> None:
         """Fixed datetime for staleness testing."""
 
         @classmethod
-        def utcnow(cls) -> datetime:
+        def now(cls, tz: object | None = None) -> datetime:
             """Return a fixed datetime for deterministic tests.
 
             Args:
@@ -84,7 +84,9 @@ def test_staleness_logic_with_sqlite_dates() -> None:
             Returns:
                 datetime: Fixed UTC datetime for staleness logic.
             """
-            return datetime(2025, 5, 1)
+            if tz is None:
+                return datetime(2025, 5, 1)
+            return datetime(2025, 5, 1, tzinfo=tz)
 
     original_datetime = main.datetime
     try:
@@ -132,7 +134,7 @@ def test_reported_facts_ingestion_net_income_cfs() -> None:
         _iter_reported_rows(
             symbol="TEST.US",
             provider="EODHD",
-            retrieval_date=datetime(2025, 3, 1),
+            retrieval_date=datetime(2025, 3, 1, tzinfo=UTC),
             raw_data=raw_data,
         )
     )

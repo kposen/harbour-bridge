@@ -2,6 +2,7 @@ mypy
 more-itertools
 openpyxl
 pandas
+psycopg[binary]
 pydantic
 pytest
 requests

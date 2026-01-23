@@ -1,15 +1,15 @@
--- SQLite schema for financial facts.
-CREATE TABLE financial_facts (
+-- Postgres schema for financial facts.
+CREATE TABLE IF NOT EXISTS financial_facts (
     symbol TEXT NOT NULL,
-    fiscal_date TEXT NOT NULL,
-    filing_date TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
+    fiscal_date DATE NOT NULL,
+    filing_date DATE NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
     period_type TEXT NOT NULL,
     statement TEXT NOT NULL,
     line_item TEXT NOT NULL,
     value_source TEXT NOT NULL,
-    value REAL NULL,
-    is_forecast INTEGER NOT NULL,
+    value DOUBLE PRECISION NULL,
+    is_forecast BOOLEAN NOT NULL,
     provider TEXT NOT NULL,
     CONSTRAINT PK_financial_facts PRIMARY KEY (
         symbol,
@@ -23,101 +23,101 @@ CREATE TABLE financial_facts (
     )
 );
 
-CREATE INDEX IX_financial_facts_symbol_fiscal
+CREATE INDEX IF NOT EXISTS IX_financial_facts_symbol_fiscal
     ON financial_facts (symbol, fiscal_date, period_type);
 
-CREATE INDEX IX_financial_facts_retrieval
+CREATE INDEX IF NOT EXISTS IX_financial_facts_retrieval
     ON financial_facts (retrieval_date);
 
-CREATE TABLE market_metrics (
+CREATE TABLE IF NOT EXISTS market_metrics (
     symbol TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
     section TEXT NOT NULL,
     metric TEXT NOT NULL,
-    value_float REAL NULL,
+    value_float DOUBLE PRECISION NULL,
     value_text TEXT NULL,
     value_type TEXT NOT NULL,
     PRIMARY KEY (symbol, retrieval_date, section, metric)
 );
 
-CREATE INDEX IX_market_metrics_symbol
+CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
     ON market_metrics (symbol, retrieval_date);
 
-CREATE TABLE earnings (
+CREATE TABLE IF NOT EXISTS earnings (
     symbol TEXT NOT NULL,
-    date TEXT NOT NULL,
+    date DATE NOT NULL,
     period_type TEXT NOT NULL,
     field TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
-    value_float REAL NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    value_float DOUBLE PRECISION NULL,
     value_text TEXT NULL,
     value_type TEXT NOT NULL,
     PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
 );
 
-CREATE INDEX IX_earnings_symbol_date
+CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
     ON earnings (symbol, date);
 
-CREATE TABLE holders (
+CREATE TABLE IF NOT EXISTS holders (
     symbol TEXT NOT NULL,
-    date TEXT NOT NULL,
+    date DATE NOT NULL,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
-    totalShares REAL NULL,
-    totalAssets REAL NULL,
-    currentShares REAL NULL,
-    change REAL NULL,
-    change_p REAL NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    totalShares DOUBLE PRECISION NULL,
+    totalAssets DOUBLE PRECISION NULL,
+    currentShares DOUBLE PRECISION NULL,
+    change DOUBLE PRECISION NULL,
+    change_p DOUBLE PRECISION NULL,
     PRIMARY KEY (symbol, date, name, retrieval_date)
 );
 
-CREATE INDEX IX_holders_symbol_date
+CREATE INDEX IF NOT EXISTS IX_holders_symbol_date
     ON holders (symbol, date);
 
-CREATE TABLE insider_transactions (
+CREATE TABLE IF NOT EXISTS insider_transactions (
     symbol TEXT NOT NULL,
-    date TEXT NOT NULL,
+    date DATE NOT NULL,
     ownerName TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
-    transactionDate TEXT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    transactionDate DATE NULL,
     transactionCode TEXT NULL,
-    transactionAmount REAL NULL,
-    transactionPrice REAL NULL,
+    transactionAmount DOUBLE PRECISION NULL,
+    transactionPrice DOUBLE PRECISION NULL,
     transactionAcquiredDisposed TEXT NULL,
-    postTransactionAmount REAL NULL,
+    postTransactionAmount DOUBLE PRECISION NULL,
     secLink TEXT NULL,
     PRIMARY KEY (symbol, date, ownerName, retrieval_date)
 );
 
-CREATE INDEX IX_insider_transactions_symbol_date
+CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
     ON insider_transactions (symbol, date);
 
-CREATE TABLE listings (
+CREATE TABLE IF NOT EXISTS listings (
     code TEXT NOT NULL,
     exchange TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
     primary_ticker TEXT NOT NULL,
     name TEXT NULL,
     PRIMARY KEY (code, exchange, retrieval_date)
 );
 
-CREATE INDEX IX_listings_primary_ticker
+CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
     ON listings (primary_ticker, retrieval_date);
 
-CREATE TABLE prices (
+CREATE TABLE IF NOT EXISTS prices (
     symbol TEXT NOT NULL,
-    date TEXT NOT NULL,
-    retrieval_date TEXT NOT NULL,
+    date DATE NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
     provider TEXT NOT NULL,
-    open REAL NULL,
-    high REAL NULL,
-    low REAL NULL,
-    close REAL NULL,
-    adjusted_close REAL NULL,
-    volume REAL NULL,
+    open DOUBLE PRECISION NULL,
+    high DOUBLE PRECISION NULL,
+    low DOUBLE PRECISION NULL,
+    close DOUBLE PRECISION NULL,
+    adjusted_close DOUBLE PRECISION NULL,
+    volume DOUBLE PRECISION NULL,
     PRIMARY KEY (symbol, date, retrieval_date, provider)
 );
 
-CREATE INDEX IX_prices_symbol_date
+CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
     ON prices (symbol, date);

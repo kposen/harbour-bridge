@@ -49,23 +49,23 @@ PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
 RETRIEVAL_COLUMN = "retrieval_date"
 
 
-def get_engine(db_path: str) -> Engine:
-    """Create a SQLAlchemy engine for SQLite.
+def get_engine(database_url: str) -> Engine:
+    """Create a SQLAlchemy engine for Postgres.
 
     Args:
-        db_path (str): Filesystem path to the SQLite database.
+        database_url (str): SQLAlchemy database URL (Postgres DSN).
 
     Returns:
-        Engine: SQLAlchemy engine bound to SQLite.
+        Engine: SQLAlchemy engine bound to Postgres.
     """
-    return create_engine(f"sqlite:///{db_path}", future=True)
+    return create_engine(database_url, future=True)
 
 
 def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     """Fetch the most recent filing date for a symbol.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol to query.
 
     Returns:
@@ -76,7 +76,7 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
         SELECT MAX(filing_date) AS latest_filing_date
         FROM financial_facts
         WHERE symbol = :symbol
-          AND is_forecast = 0
+          AND is_forecast = FALSE
           AND statement IN ('income', 'balance', 'cash_flow')
           AND value_source IN ('reported', 'reported_raw')
         """
@@ -99,7 +99,7 @@ def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | 
     """Fetch the most recent price date for a symbol/provider pair.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol to query.
         provider (str): Provider name (e.g., "EODHD").
 
@@ -120,15 +120,143 @@ def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | 
 
 
 def ensure_schema(engine: Engine) -> None:
-    """Ensure the financial_facts table exists.
+    """Ensure the Postgres schema exists.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
 
     Returns:
         None: Creates schema when missing.
     """
-    schema_sql = """
+    if engine.dialect.name == "postgresql":
+        schema_sql = _postgres_schema_sql()
+    elif engine.dialect.name == "sqlite":
+        schema_sql = _sqlite_schema_sql()
+    else:
+        raise ValueError(f"Unsupported database dialect: {engine.dialect.name}")
+    with engine.begin() as conn:
+        for statement in (stmt.strip() for stmt in schema_sql.split(";")):
+            if statement:
+                conn.exec_driver_sql(statement)
+
+
+def _postgres_schema_sql() -> str:
+    """Return Postgres DDL for application tables."""
+    return """
+    CREATE TABLE IF NOT EXISTS financial_facts (
+        symbol TEXT NOT NULL,
+        fiscal_date DATE NOT NULL,
+        filing_date DATE NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        period_type TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        line_item TEXT NOT NULL,
+        value_source TEXT NOT NULL,
+        value DOUBLE PRECISION NULL,
+        is_forecast BOOLEAN NOT NULL,
+        provider TEXT NOT NULL,
+        PRIMARY KEY (
+            symbol,
+            fiscal_date,
+            filing_date,
+            retrieval_date,
+            period_type,
+            statement,
+            line_item,
+            value_source
+        )
+    );
+    CREATE INDEX IF NOT EXISTS IX_financial_facts_symbol_fiscal
+        ON financial_facts (symbol, fiscal_date, period_type);
+    CREATE INDEX IF NOT EXISTS IX_financial_facts_retrieval
+        ON financial_facts (retrieval_date);
+    CREATE TABLE IF NOT EXISTS market_metrics (
+        symbol TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        section TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        value_float DOUBLE PRECISION NULL,
+        value_text TEXT NULL,
+        value_type TEXT NOT NULL,
+        PRIMARY KEY (symbol, retrieval_date, section, metric)
+    );
+    CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
+        ON market_metrics (symbol, retrieval_date);
+    CREATE TABLE IF NOT EXISTS earnings (
+        symbol TEXT NOT NULL,
+        date DATE NOT NULL,
+        period_type TEXT NOT NULL,
+        field TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        value_float DOUBLE PRECISION NULL,
+        value_text TEXT NULL,
+        value_type TEXT NOT NULL,
+        PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
+        ON earnings (symbol, date);
+    CREATE TABLE IF NOT EXISTS holders (
+        symbol TEXT NOT NULL,
+        date DATE NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        totalShares DOUBLE PRECISION NULL,
+        totalAssets DOUBLE PRECISION NULL,
+        currentShares DOUBLE PRECISION NULL,
+        change DOUBLE PRECISION NULL,
+        change_p DOUBLE PRECISION NULL,
+        PRIMARY KEY (symbol, date, name, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_holders_symbol_date
+        ON holders (symbol, date);
+    CREATE TABLE IF NOT EXISTS insider_transactions (
+        symbol TEXT NOT NULL,
+        date DATE NOT NULL,
+        ownerName TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        transactionDate DATE NULL,
+        transactionCode TEXT NULL,
+        transactionAmount DOUBLE PRECISION NULL,
+        transactionPrice DOUBLE PRECISION NULL,
+        transactionAcquiredDisposed TEXT NULL,
+        postTransactionAmount DOUBLE PRECISION NULL,
+        secLink TEXT NULL,
+        PRIMARY KEY (symbol, date, ownerName, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
+        ON insider_transactions (symbol, date);
+    CREATE TABLE IF NOT EXISTS listings (
+        code TEXT NOT NULL,
+        exchange TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        primary_ticker TEXT NOT NULL,
+        name TEXT NULL,
+        PRIMARY KEY (code, exchange, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
+        ON listings (primary_ticker, retrieval_date);
+    CREATE TABLE IF NOT EXISTS prices (
+        symbol TEXT NOT NULL,
+        date DATE NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        provider TEXT NOT NULL,
+        open DOUBLE PRECISION NULL,
+        high DOUBLE PRECISION NULL,
+        low DOUBLE PRECISION NULL,
+        close DOUBLE PRECISION NULL,
+        adjusted_close DOUBLE PRECISION NULL,
+        volume DOUBLE PRECISION NULL,
+        PRIMARY KEY (symbol, date, retrieval_date, provider)
+    );
+    CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
+        ON prices (symbol, date);
+    """
+
+
+def _sqlite_schema_sql() -> str:
+    """Return SQLite DDL for application tables (tests/local use)."""
+    return """
     CREATE TABLE IF NOT EXISTS financial_facts (
         symbol TEXT NOT NULL,
         fiscal_date TEXT NOT NULL,
@@ -238,10 +366,6 @@ def ensure_schema(engine: Engine) -> None:
     CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
         ON prices (symbol, date);
     """
-    with engine.begin() as conn:
-        for statement in (stmt.strip() for stmt in schema_sql.split(";")):
-            if statement:
-                conn.exec_driver_sql(statement)
 
 
 def write_market_metrics(
@@ -250,10 +374,10 @@ def write_market_metrics(
     retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> int:
-    """Write market metrics sections (Highlights, Valuation, etc.) to SQLite.
+    """Write market metrics sections (Highlights, Valuation, etc.) to Postgres.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
@@ -311,7 +435,7 @@ def write_prices(
     """Write end-of-day price rows into the prices table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
         retrieval_date (datetime): When the payload was retrieved.
@@ -375,7 +499,7 @@ def write_earnings(
     """Write earnings payload data to the earnings table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
@@ -434,7 +558,7 @@ def write_holders(
     """Write holders payload data to the holders table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
@@ -497,7 +621,7 @@ def write_insider_transactions(
     """Write insider transactions payload data to the insider_transactions table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
@@ -561,7 +685,7 @@ def write_listings(
     """Write listing relationships from General.Listings to the listings table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         retrieval_date (datetime): When the payload was retrieved.
         raw_data (Mapping[str, object]): Raw provider payload.
 
@@ -622,7 +746,6 @@ def _iter_earnings_rows(
     earnings = raw_data.get("Earnings")
     if not isinstance(earnings, Mapping):
         return []
-    retrieval_stamp = retrieval_date.isoformat()
     branches = (("History", "quarterly"), ("Annual", "annual"), ("Trend", "trend"))
 
     def branch_rows(pair: tuple[str, str]) -> Iterable[dict[str, object]]:
@@ -637,7 +760,7 @@ def _iter_earnings_rows(
         branch, period_type = pair
         return _iter_earnings_branch(
             symbol=symbol,
-            retrieval_stamp=retrieval_stamp,
+            retrieval_date=retrieval_date,
             period_type=period_type,
             data=earnings.get(branch),
         )
@@ -647,7 +770,7 @@ def _iter_earnings_rows(
 
 def _iter_earnings_branch(
     symbol: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     period_type: str,
     data: object,
 ) -> Iterable[dict[str, object]]:
@@ -655,7 +778,7 @@ def _iter_earnings_branch(
 
     Args:
         symbol (str): Ticker symbol for the payload.
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         period_type (str): Period type label ("annual", "quarterly", "trend").
         data (object): Branch payload to parse.
 
@@ -667,7 +790,7 @@ def _iter_earnings_branch(
     entry_rows = partial(
         _iter_earnings_entry_rows,
         symbol,
-        retrieval_stamp,
+        retrieval_date,
         period_type,
     )
     entries = (entry for entry in data.values() if isinstance(entry, Mapping))
@@ -676,7 +799,7 @@ def _iter_earnings_branch(
 
 def _iter_earnings_entry_rows(
     symbol: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     period_type: str,
     entry: Mapping[str, object],
 ) -> list[dict[str, object]]:
@@ -684,15 +807,15 @@ def _iter_earnings_entry_rows(
 
     Args:
         symbol (str): Ticker symbol for the payload.
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         period_type (str): Period type label.
         entry (Mapping[str, object]): Entry payload to parse.
 
     Returns:
         list[dict[str, object]]: Row dictionaries for insertion.
     """
-    period = entry.get("date")
-    if not isinstance(period, str) or not period.strip():
+    period = _parse_date(entry.get("date"))
+    if period is None:
         return []
 
     def row_for_field(field: str, raw_value: object) -> dict[str, object] | None:
@@ -714,7 +837,7 @@ def _iter_earnings_entry_rows(
             "date": period,
             "period_type": period_type,
             "field": str(field),
-            "retrieval_date": retrieval_stamp,
+            "retrieval_date": retrieval_date,
         }
         return _typed_metric_row(base, raw_value)
 
@@ -745,14 +868,13 @@ def _iter_holders_rows(
     holders = raw_data.get("Holders")
     if not isinstance(holders, Mapping):
         return []
-    retrieval_stamp = retrieval_date.isoformat()
     return [
         {
             "symbol": symbol,
-            "date": entry.get("date", "").strip(),
+            "date": entry_date,
             "name": entry.get("name", "").strip(),
             "category": category,
-            "retrieval_date": retrieval_stamp,
+            "retrieval_date": retrieval_date,
             "totalShares": _to_float(entry.get("totalShares")),
             "totalAssets": _to_float(entry.get("totalAssets")),
             "currentShares": _to_float(entry.get("currentShares")),
@@ -766,8 +888,8 @@ def _iter_holders_rows(
         if isinstance(entry, Mapping)
         if isinstance(entry.get("name"), str)
         if entry.get("name", "").strip()
-        if isinstance(entry.get("date"), str)
-        if entry.get("date", "").strip()
+        for entry_date in [_parse_date(entry.get("date"))]
+        if entry_date is not None
     ]
 
 
@@ -789,21 +911,20 @@ def _iter_insider_rows(
     transactions = raw_data.get("InsiderTransactions")
     if not isinstance(transactions, Mapping):
         return []
-    retrieval_stamp = retrieval_date.isoformat()
-    row_builder = partial(_insider_row, symbol, retrieval_stamp)
+    row_builder = partial(_insider_row, symbol, retrieval_date)
     return [row for row in map(row_builder, transactions.values()) if row is not None]
 
 
 def _insider_row(
     symbol: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     entry: object,
 ) -> dict[str, object] | None:
     """Build a row for a single insider transaction entry.
 
     Args:
         symbol (str): Ticker symbol for the payload.
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         entry (object): Raw entry payload.
 
     Returns:
@@ -817,12 +938,16 @@ def _insider_row(
         return None
     if not isinstance(date_str, str) or not date_str.strip():
         return None
+    parsed_date = _parse_date(date_str)
+    if parsed_date is None:
+        return None
+    transaction_date = _parse_date(entry.get("transactionDate"))
     return {
         "symbol": symbol,
-        "date": date_str,
+        "date": parsed_date,
         "ownerName": owner.strip(),
-        "retrieval_date": retrieval_stamp,
-        "transactionDate": entry.get("transactionDate"),
+        "retrieval_date": retrieval_date,
+        "transactionDate": transaction_date,
         "transactionCode": entry.get("transactionCode"),
         "transactionAmount": _to_float(entry.get("transactionAmount")),
         "transactionPrice": _to_float(entry.get("transactionPrice")),
@@ -854,12 +979,11 @@ def _iter_listings_rows(
         return []
     if not isinstance(listings, Mapping):
         return []
-    retrieval_stamp = retrieval_date.isoformat()
     return [
         {
             "code": entry.get("Code", "").strip(),
             "exchange": entry.get("Exchange", "").strip(),
-            "retrieval_date": retrieval_stamp,
+            "retrieval_date": retrieval_date,
             "primary_ticker": primary_ticker.strip(),
             "name": entry.get("Name"),
         }
@@ -897,8 +1021,6 @@ def _iter_market_metrics(
         "AnalystRatings",
         "SplitsDividends",
     )
-    retrieval_stamp = retrieval_date.isoformat()
-
     def section_rows(section: str) -> Iterable[dict[str, object]]:
         """Build metric rows for a section.
 
@@ -908,7 +1030,7 @@ def _iter_market_metrics(
         Returns:
             Iterable[dict[str, object]]: Row dictionaries for insertion.
         """
-        return _market_section_rows(symbol, retrieval_stamp, section, raw_data.get(section))
+        return _market_section_rows(symbol, retrieval_date, section, raw_data.get(section))
 
     return mapcat(section_rows, sections)
 
@@ -930,16 +1052,15 @@ def _iter_price_rows(
     Returns:
         Iterable[dict[str, object]]: Row dictionaries for insertion.
     """
-    retrieval_stamp = retrieval_date.isoformat()
     base = {
         "symbol": symbol,
-        "retrieval_date": retrieval_stamp,
+        "retrieval_date": retrieval_date,
         "provider": provider,
     }
     return [
         {
             **base,
-            "date": price_date.isoformat(),
+            "date": price_date,
             **{
                 field: _first_value(entry, keys)
                 for field, keys in PRICE_FIELD_MAP.items()
@@ -970,7 +1091,7 @@ def _price_entries(raw_data: object) -> Iterable[Mapping[str, object]]:
 
 def _market_section_rows(
     symbol: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     section: str,
     data: object,
 ) -> list[dict[str, object]]:
@@ -978,7 +1099,7 @@ def _market_section_rows(
 
     Args:
         symbol (str): Ticker symbol for the payload.
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         section (str): Payload section name.
         data (object): Raw section payload.
 
@@ -1008,7 +1129,7 @@ def _market_section_rows(
             }
     base = {
         "symbol": symbol,
-        "retrieval_date": retrieval_stamp,
+        "retrieval_date": retrieval_date,
         "section": section,
     }
     rows = [
@@ -1033,7 +1154,7 @@ def write_financial_facts(
     """Write model line items to the financial_facts table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the model.
         provider (str): Provider name (e.g., "EODHD").
         retrieval_date (datetime): When the payload was retrieved.
@@ -1137,7 +1258,6 @@ def _iter_fact_rows(
         Iterable[dict[str, object]]: Row dictionaries for insertion.
     """
     history_len = len(model.history)
-    retrieval_stamp = retrieval_date.isoformat()
     all_items = [*model.history, *model.forecast]
     items_with_flags = (
         (item, index >= history_len) for index, item in enumerate(all_items)
@@ -1145,15 +1265,15 @@ def _iter_fact_rows(
     return (
         {
             "symbol": symbol,
-            "fiscal_date": item.period.isoformat(),
-            "filing_date": filing_dates.get(item.period, item.period).isoformat(),
-            "retrieval_date": retrieval_stamp,
+            "fiscal_date": item.period,
+            "filing_date": filing_dates.get(item.period, item.period),
+            "retrieval_date": retrieval_date,
             "period_type": period_type,
             "statement": statement,
             "line_item": line_item,
             "value_source": value_source,
             "value": value,
-            "is_forecast": int(is_forecast),
+            "is_forecast": is_forecast,
             "provider": provider,
         }
         for item, is_forecast in items_with_flags
@@ -1189,7 +1309,7 @@ def write_reported_facts(
     """Write reported provider values (annual + quarterly) to the fact table.
 
     Args:
-        engine (Engine): SQLAlchemy engine for SQLite.
+        engine (Engine): SQLAlchemy engine for Postgres.
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
         retrieval_date (datetime): When the payload was retrieved.
@@ -1288,7 +1408,6 @@ def _iter_reported_rows(
     if not isinstance(financials, Mapping):
         return []
 
-    retrieval_stamp = retrieval_date.isoformat()
     period_types = (("yearly", "annual"), ("quarterly", "quarterly"))
     statement_keys = (
         ("income", "Income_Statement"),
@@ -1299,7 +1418,7 @@ def _iter_reported_rows(
         _iter_reported_statement_rows(
             symbol=symbol,
             provider=provider,
-            retrieval_stamp=retrieval_stamp,
+            retrieval_date=retrieval_date,
             period_label=period_label,
             statement=statement,
             period_block=_period_block(financials, key, period_key),
@@ -1311,7 +1430,7 @@ def _iter_reported_rows(
     outstanding_rows = _iter_outstanding_rows(
         symbol=symbol,
         provider=provider,
-        retrieval_stamp=retrieval_stamp,
+        retrieval_date=retrieval_date,
         outstanding=raw_data.get("outstandingShares"),
     )
     return chain(statement_rows, outstanding_rows)
@@ -1344,7 +1463,7 @@ def _period_block(
 def _iter_reported_statement_rows(
     symbol: str,
     provider: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     period_label: str,
     statement: str,
     period_block: Mapping[str, object] | None,
@@ -1355,7 +1474,7 @@ def _iter_reported_statement_rows(
     Args:
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         period_label (str): Period type label ("annual" or "quarterly").
         statement (str): Statement identifier ("income", "balance", "cash_flow").
         period_block (Mapping[str, object] | None): Period mapping for the statement.
@@ -1370,7 +1489,7 @@ def _iter_reported_statement_rows(
         _iter_reported_period_rows(
             symbol=symbol,
             provider=provider,
-            retrieval_stamp=retrieval_stamp,
+            retrieval_date=retrieval_date,
             period_label=period_label,
             statement=statement,
             fiscal_str=fiscal_str,
@@ -1385,7 +1504,7 @@ def _iter_reported_statement_rows(
 def _iter_reported_period_rows(
     symbol: str,
     provider: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     period_label: str,
     statement: str,
     fiscal_str: str,
@@ -1397,7 +1516,7 @@ def _iter_reported_period_rows(
     Args:
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         period_label (str): Period type label ("annual" or "quarterly").
         statement (str): Statement identifier ("income", "balance", "cash_flow").
         fiscal_str (str): Fiscal date string.
@@ -1413,12 +1532,12 @@ def _iter_reported_period_rows(
     filing_date = _parse_date(values.get("filing_date")) or fiscal_date
     base = {
         "symbol": symbol,
-        "fiscal_date": fiscal_date.isoformat(),
-        "filing_date": filing_date.isoformat(),
-        "retrieval_date": retrieval_stamp,
+        "fiscal_date": fiscal_date,
+        "filing_date": filing_date,
+        "retrieval_date": retrieval_date,
         "period_type": period_label,
         "statement": statement,
-        "is_forecast": 0,
+        "is_forecast": False,
         "provider": provider,
     }
     negative_items = STATEMENT_NEGATIVE_LINE_ITEMS.get(statement, set())
@@ -1450,7 +1569,7 @@ def _iter_reported_period_rows(
 def _iter_outstanding_rows(
     symbol: str,
     provider: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     outstanding: object,
 ) -> list[dict[str, object]]:
     """Yield reported rows for outstanding shares.
@@ -1458,7 +1577,7 @@ def _iter_outstanding_rows(
     Args:
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         outstanding (object): Outstanding shares payload.
 
     Returns:
@@ -1481,7 +1600,7 @@ def _iter_outstanding_rows(
         return _outstanding_period_rows(
             symbol=symbol,
             provider=provider,
-            retrieval_stamp=retrieval_stamp,
+            retrieval_date=retrieval_date,
             period_label=label,
             block=outstanding.get(period_key),
         )
@@ -1492,7 +1611,7 @@ def _iter_outstanding_rows(
 def _outstanding_period_rows(
     symbol: str,
     provider: str,
-    retrieval_stamp: str,
+    retrieval_date: datetime,
     period_label: str,
     block: object,
 ) -> list[dict[str, object]]:
@@ -1501,7 +1620,7 @@ def _outstanding_period_rows(
     Args:
         symbol (str): Ticker symbol for the payload.
         provider (str): Provider name (e.g., "EODHD").
-        retrieval_stamp (str): Retrieval timestamp as ISO string.
+        retrieval_date (datetime): Retrieval timestamp.
         period_label (str): Period type label ("annual" or "quarterly").
         block (object): Outstanding shares block (mapping or list).
 
@@ -1512,15 +1631,15 @@ def _outstanding_period_rows(
     rows = [
         {
             "symbol": symbol,
-            "fiscal_date": fiscal_date.isoformat(),
-            "filing_date": fiscal_date.isoformat(),
-            "retrieval_date": retrieval_stamp,
+            "fiscal_date": fiscal_date,
+            "filing_date": fiscal_date,
+            "retrieval_date": retrieval_date,
             "period_type": period_label,
             "statement": "multi_statement",
             "line_item": "shares",
             "value_source": "reported",
             "value": shares,
-            "is_forecast": 0,
+            "is_forecast": False,
             "provider": provider,
         }
         for entry in entries
@@ -1570,6 +1689,7 @@ def _filter_versioned_rows(
     """
     if not rows:
         return []
+    rows = _coerce_sqlite_rows(rows, conn.engine.dialect.name)
     rel_tol, abs_tol = get_database_tolerances()
     where_clause = " AND ".join(f"{column} = :{column}" for column in match_columns)
     query = text(
@@ -1602,6 +1722,38 @@ def _filter_versioned_rows(
         return None if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol) else row
 
     return [row for row in map(_row_if_new, rows) if row is not None]
+
+
+def _coerce_sqlite_rows(
+    rows: list[dict[str, object]],
+    dialect_name: str,
+) -> list[dict[str, object]]:
+    """Coerce date/time/bool values for SQLite inserts.
+
+    Args:
+        rows (list[dict[str, object]]): Candidate rows for insertion.
+        dialect_name (str): SQLAlchemy dialect name.
+
+    Returns:
+        list[dict[str, object]]: Rows with SQLite-safe scalar values.
+    """
+    if dialect_name != "sqlite":
+        return rows
+    return [
+        {key: _coerce_sqlite_value(value) for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def _coerce_sqlite_value(value: object) -> object:
+    """Convert Python date/time/bool values into SQLite-safe scalars."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, bool):
+        return int(value)
+    return value
 
 
 def _rows_equal(
@@ -1779,11 +1931,20 @@ def _parse_date(value: object) -> date | None:
     Returns:
         date | None: Parsed date if possible.
     """
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
+        stripped = value.strip()
+        if not stripped:
             return None
+        try:
+            return date.fromisoformat(stripped)
+        except ValueError:
+            normalized = stripped[:-1] + "+00:00" if stripped.endswith("Z") else stripped
+            try:
+                return datetime.fromisoformat(normalized).date()
+            except ValueError:
+                return None
     return None

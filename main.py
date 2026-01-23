@@ -154,12 +154,12 @@ def run_pipeline(results_dir: Path) -> None:
         logger.info("No tickers provided; pipeline will exit after setup")
     data_dir = build_run_data_dir(results_dir.name)
     logger.info("Created data directory: %s", data_dir)
-    db_path = os.getenv("SQLITE_DB_PATH")
-    engine = get_engine(db_path) if db_path else None
+    database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
+    engine = get_engine(database_url) if database_url else None
     if engine is None:
-        logger.info("SQLITE_DB_PATH not set; skipping database writes")
+        logger.info("HARBOUR_BRIDGE_DB_URL not set; skipping database writes")
     else:
-        logger.info("Using SQLite database at %s", db_path)
+        logger.info("Using Postgres database connection from HARBOUR_BRIDGE_DB_URL")
         ensure_schema(engine)
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
@@ -227,7 +227,7 @@ def run_pipeline(results_dir: Path) -> None:
         report_path = results_dir / f"{ticker}.xlsx"
         export_model_to_excel(forecast_model, report_path)
         logger.info("Wrote report to %s", report_path)
-        # Persist to SQLite when configured.
+        # Persist to Postgres when configured.
         if engine is not None:
             write_market_metrics(
                 engine=engine,

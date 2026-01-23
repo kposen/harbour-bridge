@@ -12,10 +12,10 @@
 - `python -m venv .venv` creates the local virtual environment.
 - `source .venv/bin/activate` (or `.venv\\Scripts\\activate` on Windows) activates the environment.
 - `pip install -r requirements.txt` installs pinned dependencies once a requirements file exists.
-- `pip install pandas requests pydantic mypy openpyxl toolz more-itertools` installs the current runtime dependencies and type checker.
+- `pip install pandas requests pydantic mypy openpyxl toolz more-itertools sqlalchemy psycopg[binary]` installs the current runtime dependencies and type checker.
 - `python -m src.app` runs the main module when it is introduced.
 - Run pipeline: `python main.py` (requires `EODHD_API_KEY`).
-- Optional SQLite persistence via `SQLITE_DB_PATH`.
+- Optional Postgres persistence via `HARBOUR_BRIDGE_DB_URL`.
 - Configure float comparison tolerances in `config.toml`.
 
 ## Coding Style & Naming Conventions
