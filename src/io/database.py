@@ -259,6 +259,13 @@ def _postgres_schema_sql() -> str:
         earnings_estimate DOUBLE PRECISION NULL,
         earnings_difference DOUBLE PRECISION NULL,
         earnings_percent DOUBLE PRECISION NULL,
+        dividend_date DATE NULL,
+        dividend_currency TEXT NULL,
+        dividend_amount DOUBLE PRECISION NULL,
+        dividend_period TEXT NULL,
+        dividend_declaration_date DATE NULL,
+        dividend_record_date DATE NULL,
+        dividend_payment_date DATE NULL,
         split_date DATE NULL,
         split_optionable BOOLEAN NULL,
         split_old_shares DOUBLE PRECISION NULL,
@@ -638,21 +645,28 @@ def write_corporate_actions_calendar(
     retrieval_date: datetime,
     earnings_payload: object | None,
     splits_payload: object | None,
+    dividends_payloads: list[object],
 ) -> int:
-    """Write upcoming earnings and split events to the corporate calendar table.
+    """Write upcoming earnings, splits, and dividends to the corporate calendar table.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.
         retrieval_date (datetime): When the payloads were retrieved.
         earnings_payload (object | None): Raw earnings calendar payload.
         splits_payload (object | None): Raw splits calendar payload.
+        dividends_payloads (list[object]): Raw dividends calendar payloads.
 
     Returns:
         int: Number of inserted rows.
     """
     earnings_rows = list(_iter_earnings_calendar_rows(retrieval_date, earnings_payload))
     splits_rows = list(_iter_split_calendar_rows(retrieval_date, splits_payload))
-    if not earnings_rows and not splits_rows:
+    dividends_rows = [
+        row
+        for payload in dividends_payloads
+        for row in _iter_dividend_calendar_rows(retrieval_date, payload)
+    ]
+    if not earnings_rows and not splits_rows and not dividends_rows:
         return 0
     insert_sql = text(
         """
@@ -667,6 +681,13 @@ def write_corporate_actions_calendar(
             earnings_estimate,
             earnings_difference,
             earnings_percent,
+            dividend_date,
+            dividend_currency,
+            dividend_amount,
+            dividend_period,
+            dividend_declaration_date,
+            dividend_record_date,
+            dividend_payment_date,
             split_date,
             split_optionable,
             split_old_shares,
@@ -683,6 +704,13 @@ def write_corporate_actions_calendar(
             :earnings_estimate,
             :earnings_difference,
             :earnings_percent,
+            :dividend_date,
+            :dividend_currency,
+            :dividend_amount,
+            :dividend_period,
+            :dividend_declaration_date,
+            :dividend_record_date,
+            :dividend_payment_date,
             :split_date,
             :split_optionable,
             :split_old_shares,
@@ -716,6 +744,18 @@ def write_corporate_actions_calendar(
                 logger.info("Writing %d upcoming splits calendar rows", len(rows_to_insert))
                 conn.execute(insert_sql, rows_to_insert)
                 inserted += len(rows_to_insert)
+        if dividends_rows:
+            rows_to_insert = _filter_versioned_rows(
+                conn=conn,
+                table="corporate_actions_calendar",
+                rows=dividends_rows,
+                match_columns=("symbol", "dividend_date"),
+                retrieval_column="date_retrieved",
+            )
+            if rows_to_insert:
+                logger.info("Writing %d upcoming dividends calendar rows", len(rows_to_insert))
+                conn.execute(insert_sql, rows_to_insert)
+                inserted += len(rows_to_insert)
     return inserted
 
 
@@ -746,6 +786,13 @@ def _iter_earnings_calendar_rows(
             "earnings_estimate": _to_float(entry.get("estimate")),
             "earnings_difference": _to_float(entry.get("difference")),
             "earnings_percent": _to_float_allow_percent(entry.get("percent")),
+            "dividend_date": None,
+            "dividend_currency": None,
+            "dividend_amount": None,
+            "dividend_period": None,
+            "dividend_declaration_date": None,
+            "dividend_record_date": None,
+            "dividend_payment_date": None,
             "split_date": None,
             "split_optionable": None,
             "split_old_shares": None,
@@ -814,6 +861,13 @@ def _iter_split_calendar_rows(
             "earnings_estimate": None,
             "earnings_difference": None,
             "earnings_percent": None,
+            "dividend_date": None,
+            "dividend_currency": None,
+            "dividend_amount": None,
+            "dividend_period": None,
+            "dividend_declaration_date": None,
+            "dividend_record_date": None,
+            "dividend_payment_date": None,
             "split_date": split_date,
             "split_optionable": _parse_optionable(entry.get("optionable")),
             "split_old_shares": _to_float(entry.get("old_shares")),
@@ -828,6 +882,69 @@ def _iter_split_calendar_rows(
             )
         ]
         if split_date is not None
+    ]
+
+
+def _iter_dividend_calendar_rows(
+    retrieval_date: datetime,
+    payload: object | None,
+) -> Iterable[dict[str, object]]:
+    """Yield upcoming dividends calendar rows from the payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw dividends calendar payload.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if payload is None:
+        return []
+    return [
+        {
+            "symbol": code,
+            "date_retrieved": retrieval_date,
+            "earnings_report_date": None,
+            "earnings_fiscal_date": None,
+            "earnings_before_after_market": None,
+            "earnings_currency": None,
+            "earnings_actual": None,
+            "earnings_estimate": None,
+            "earnings_difference": None,
+            "earnings_percent": None,
+            "dividend_date": dividend_date,
+            "dividend_currency": _normalize_text_value(
+                _first_present(entry, ("currency", "Currency"))
+            ),
+            "dividend_amount": _to_float(
+                _first_present(entry, ("dividend", "amount", "value"))
+            ),
+            "dividend_period": _normalize_text_value(
+                _first_present(entry, ("period", "Period"))
+            ),
+            "dividend_declaration_date": _parse_date(
+                _first_present(entry, ("declarationDate", "declaration_date"))
+            ),
+            "dividend_record_date": _parse_date(
+                _first_present(entry, ("recordDate", "record_date"))
+            ),
+            "dividend_payment_date": _parse_date(
+                _first_present(entry, ("paymentDate", "payment_date"))
+            ),
+            "split_date": None,
+            "split_optionable": None,
+            "split_old_shares": None,
+            "split_new_shares": None,
+        }
+        for entry in _calendar_entries(payload)
+        for code in [_calendar_code(entry)]
+        if code is not None
+        for dividend_date in [
+            _parse_date(
+                _first_present(entry, ("date", "ex_date", "exDate", "dividend_date"))
+            )
+        ]
+        if dividend_date is not None
     ]
 
 
@@ -2002,12 +2119,15 @@ def _calendar_entries(payload: object) -> Iterable[Mapping[str, object]]:
         data = payload.get("data")
         earnings = payload.get("earnings")
         splits = payload.get("splits")
+        dividends = payload.get("dividends")
         if isinstance(data, list):
             entries = [entry for entry in data if isinstance(entry, Mapping)]
         elif isinstance(earnings, list):
             entries = [entry for entry in earnings if isinstance(entry, Mapping)]
         elif isinstance(splits, list):
             entries = [entry for entry in splits if isinstance(entry, Mapping)]
+        elif isinstance(dividends, list):
+            entries = [entry for entry in dividends if isinstance(entry, Mapping)]
         else:
             entries = [entry for entry in payload.values() if isinstance(entry, Mapping)]
     else:

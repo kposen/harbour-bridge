@@ -46,14 +46,15 @@ shell.
 
 1. **Fetch**: `fetch_data` calls the EODHD fundamentals endpoint.
 2. **Fetch prices**: `fetch_prices` calls the EODHD end-of-day endpoint and stores raw payloads.
-2. **Normalize**: `build_historic_model` converts provider fields into
+3. **Normalize**: `build_historic_model` converts provider fields into
    `LineItems` using an external mapping (`EODHD_FIELD_MAP`).
-3. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
-4. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
-5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
-6. **Raw payloads**: Stored under `data/<timestamp>` for each run, including
-   `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`, and
-   `upcoming-splits.json`.
+4. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
+5. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
+6. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
+7. **Calendars**: Upcoming earnings, splits, and dividends are fetched each run.
+8. **Raw payloads**: Stored under `data/<timestamp>` for each run, including
+   `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`,
+   `upcoming-splits.json`, and `upcoming-dividends-YYYY-MM-DD.json`.
 
 ## Database Storage (Optional)
 

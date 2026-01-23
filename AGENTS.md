@@ -6,7 +6,7 @@
 - Use `docs/` for model references, research files, and user-facing documentation.
 - Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
 - Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`, `*.prices.json`,
-  `upcoming-earnings.json`, and `upcoming-splits.json`.
+  `upcoming-earnings.json`, `upcoming-splits.json`, and `upcoming-dividends-YYYY-MM-DD.json`.
 - Normalized JSON models are stored under `data/<TICKER>.json`.
 
 ## Build, Test, and Development Commands

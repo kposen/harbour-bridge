@@ -29,6 +29,7 @@ from src.io.database import (
 from src.io.reporting import export_model_to_excel
 from src.io.storage import (
     build_run_data_dir,
+    save_upcoming_dividends_payload,
     save_upcoming_earnings_payload,
     save_upcoming_splits_payload,
     save_price_payload,
@@ -195,6 +196,42 @@ def fetch_upcoming_splits(start_date: date, end_date: date) -> object | None:
     return _fetch_calendar("calendar/splits", "splits", start_date, end_date)
 
 
+def fetch_upcoming_dividends(payload_date: date) -> object | None:
+    """Fetch upcoming dividends for a specific date."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    params = {
+        "api_token": api_key,
+        "fmt": "json",
+        "filter[date_eq]": payload_date.isoformat(),
+    }
+    logger.info("Fetching upcoming dividends for %s", payload_date)
+    try:
+        response = requests.get(
+            "https://eodhd.com/api/calendar/dividends",
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("Calendar dividends request failed for %s: %s", payload_date, exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode dividends calendar JSON for %s: %s", payload_date, exc)
+        return None
+    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+        logger.info("EODHD dividends calendar error payload for %s: %s", payload_date, payload)
+        return None
+    if not isinstance(payload, (list, dict)):
+        logger.info("EODHD dividends calendar response did not return JSON rows for %s", payload_date)
+        return None
+    if isinstance(payload, list):
+        logger.debug("Received %d dividends calendar entries for %s", len(payload), payload_date)
+    return payload
+
+
 def run_pipeline(results_dir: Path) -> None:
     """Run the imperative pipeline: fetch -> build history -> forecast -> save.
 
@@ -223,7 +260,7 @@ def run_pipeline(results_dir: Path) -> None:
         ensure_schema(engine)
     calendar_retrieval = datetime.now(UTC)
     calendar_start = calendar_retrieval.date()
-    calendar_end = calendar_start + timedelta(days=30)
+    calendar_end = calendar_start + timedelta(days=29)
     upcoming_earnings = fetch_upcoming_earnings(calendar_start, calendar_end)
     if upcoming_earnings is not None:
         save_upcoming_earnings_payload(data_dir, upcoming_earnings)
@@ -234,12 +271,22 @@ def run_pipeline(results_dir: Path) -> None:
         save_upcoming_splits_payload(data_dir, upcoming_splits)
     else:
         logger.info("Skipping upcoming splits payload save due to fetch error")
+    dividend_payloads: list[object] = []
+    for offset in range(30):
+        payload_date = calendar_start + timedelta(days=offset)
+        dividend_payload = fetch_upcoming_dividends(payload_date)
+        if dividend_payload is not None:
+            save_upcoming_dividends_payload(data_dir, payload_date, dividend_payload)
+            dividend_payloads.append(dividend_payload)
+        else:
+            logger.info("Skipping upcoming dividends payload save for %s due to fetch error", payload_date)
     if engine is not None:
         inserted = write_corporate_actions_calendar(
             engine=engine,
             retrieval_date=calendar_retrieval,
             earnings_payload=upcoming_earnings,
             splits_payload=upcoming_splits,
+            dividends_payloads=dividend_payloads,
         )
         if inserted == 0:
             logger.info("No corporate actions calendar rows inserted")

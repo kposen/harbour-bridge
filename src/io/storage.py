@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -146,6 +147,23 @@ def save_upcoming_splits_payload(run_dir: Path, payload: object) -> Path:
     path = run_dir / "upcoming-splits.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug("Saved upcoming splits payload to %s", path)
+    return path
+
+
+def save_upcoming_dividends_payload(run_dir: Path, payload_date: date, payload: object) -> Path:
+    """Persist the upcoming dividends payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        payload_date (date): Date for the dividends payload.
+        payload (object): Raw provider payload for upcoming dividends.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    path = run_dir / f"upcoming-dividends-{payload_date.isoformat()}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved upcoming dividends payload to %s", path)
     return path
 
 
