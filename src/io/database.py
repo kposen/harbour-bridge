@@ -128,12 +128,9 @@ def ensure_schema(engine: Engine) -> None:
     Returns:
         None: Creates schema when missing.
     """
-    if engine.dialect.name == "postgresql":
-        schema_sql = _postgres_schema_sql()
-    elif engine.dialect.name == "sqlite":
-        schema_sql = _sqlite_schema_sql()
-    else:
+    if engine.dialect.name != "postgresql":
         raise ValueError(f"Unsupported database dialect: {engine.dialect.name}")
+    schema_sql = _postgres_schema_sql()
     with engine.begin() as conn:
         for statement in (stmt.strip() for stmt in schema_sql.split(";")):
             if statement:
@@ -251,121 +248,29 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
         ON prices (symbol, date);
+    CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
+        symbol TEXT NOT NULL,
+        date_retrieved TIMESTAMPTZ NOT NULL,
+        earnings_report_date DATE NULL,
+        earnings_fiscal_date DATE NULL,
+        earnings_before_after_market TEXT NULL,
+        earnings_currency TEXT NULL,
+        earnings_actual DOUBLE PRECISION NULL,
+        earnings_estimate DOUBLE PRECISION NULL,
+        earnings_difference DOUBLE PRECISION NULL,
+        earnings_percent DOUBLE PRECISION NULL,
+        split_date DATE NULL,
+        split_optionable BOOLEAN NULL,
+        split_old_shares DOUBLE PRECISION NULL,
+        split_new_shares DOUBLE PRECISION NULL
+    );
+    CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_earnings
+        ON corporate_actions_calendar (symbol, earnings_report_date);
+    CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_split
+        ON corporate_actions_calendar (symbol, split_date);
     """
 
 
-def _sqlite_schema_sql() -> str:
-    """Return SQLite DDL for application tables (tests/local use)."""
-    return """
-    CREATE TABLE IF NOT EXISTS financial_facts (
-        symbol TEXT NOT NULL,
-        fiscal_date TEXT NOT NULL,
-        filing_date TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        period_type TEXT NOT NULL,
-        statement TEXT NOT NULL,
-        line_item TEXT NOT NULL,
-        value_source TEXT NOT NULL,
-        value REAL NULL,
-        is_forecast INTEGER NOT NULL,
-        provider TEXT NOT NULL,
-        PRIMARY KEY (
-            symbol,
-            fiscal_date,
-            filing_date,
-            retrieval_date,
-            period_type,
-            statement,
-            line_item,
-            value_source
-        )
-    );
-    CREATE INDEX IF NOT EXISTS IX_financial_facts_symbol_fiscal
-        ON financial_facts (symbol, fiscal_date, period_type);
-    CREATE INDEX IF NOT EXISTS IX_financial_facts_retrieval
-        ON financial_facts (retrieval_date);
-    CREATE TABLE IF NOT EXISTS market_metrics (
-        symbol TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        section TEXT NOT NULL,
-        metric TEXT NOT NULL,
-        value_float REAL NULL,
-        value_text TEXT NULL,
-        value_type TEXT NOT NULL,
-        PRIMARY KEY (symbol, retrieval_date, section, metric)
-    );
-    CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
-        ON market_metrics (symbol, retrieval_date);
-    CREATE TABLE IF NOT EXISTS earnings (
-        symbol TEXT NOT NULL,
-        date TEXT NOT NULL,
-        period_type TEXT NOT NULL,
-        field TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        value_float REAL NULL,
-        value_text TEXT NULL,
-        value_type TEXT NOT NULL,
-        PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
-        ON earnings (symbol, date);
-    CREATE TABLE IF NOT EXISTS holders (
-        symbol TEXT NOT NULL,
-        date TEXT NOT NULL,
-        name TEXT NOT NULL,
-        category TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        totalShares REAL NULL,
-        totalAssets REAL NULL,
-        currentShares REAL NULL,
-        change REAL NULL,
-        change_p REAL NULL,
-        PRIMARY KEY (symbol, date, name, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_holders_symbol_date
-        ON holders (symbol, date);
-    CREATE TABLE IF NOT EXISTS insider_transactions (
-        symbol TEXT NOT NULL,
-        date TEXT NOT NULL,
-        ownerName TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        transactionDate TEXT NULL,
-        transactionCode TEXT NULL,
-        transactionAmount REAL NULL,
-        transactionPrice REAL NULL,
-        transactionAcquiredDisposed TEXT NULL,
-        postTransactionAmount REAL NULL,
-        secLink TEXT NULL,
-        PRIMARY KEY (symbol, date, ownerName, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
-        ON insider_transactions (symbol, date);
-    CREATE TABLE IF NOT EXISTS listings (
-        code TEXT NOT NULL,
-        exchange TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        primary_ticker TEXT NOT NULL,
-        name TEXT NULL,
-        PRIMARY KEY (code, exchange, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
-        ON listings (primary_ticker, retrieval_date);
-    CREATE TABLE IF NOT EXISTS prices (
-        symbol TEXT NOT NULL,
-        date TEXT NOT NULL,
-        retrieval_date TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        open REAL NULL,
-        high REAL NULL,
-        low REAL NULL,
-        close REAL NULL,
-        adjusted_close REAL NULL,
-        volume REAL NULL,
-        PRIMARY KEY (symbol, date, retrieval_date, provider)
-    );
-    CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
-        ON prices (symbol, date);
-    """
 
 
 def write_market_metrics(
@@ -726,6 +631,203 @@ def write_listings(
         logger.info("Writing %d listing rows", len(rows_to_insert))
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
+
+
+def write_corporate_actions_calendar(
+    engine: Engine,
+    retrieval_date: datetime,
+    earnings_payload: object | None,
+    splits_payload: object | None,
+) -> int:
+    """Write upcoming earnings and split events to the corporate calendar table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        retrieval_date (datetime): When the payloads were retrieved.
+        earnings_payload (object | None): Raw earnings calendar payload.
+        splits_payload (object | None): Raw splits calendar payload.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    earnings_rows = list(_iter_earnings_calendar_rows(retrieval_date, earnings_payload))
+    splits_rows = list(_iter_split_calendar_rows(retrieval_date, splits_payload))
+    if not earnings_rows and not splits_rows:
+        return 0
+    insert_sql = text(
+        """
+        INSERT INTO corporate_actions_calendar (
+            symbol,
+            date_retrieved,
+            earnings_report_date,
+            earnings_fiscal_date,
+            earnings_before_after_market,
+            earnings_currency,
+            earnings_actual,
+            earnings_estimate,
+            earnings_difference,
+            earnings_percent,
+            split_date,
+            split_optionable,
+            split_old_shares,
+            split_new_shares
+        )
+        VALUES (
+            :symbol,
+            :date_retrieved,
+            :earnings_report_date,
+            :earnings_fiscal_date,
+            :earnings_before_after_market,
+            :earnings_currency,
+            :earnings_actual,
+            :earnings_estimate,
+            :earnings_difference,
+            :earnings_percent,
+            :split_date,
+            :split_optionable,
+            :split_old_shares,
+            :split_new_shares
+        )
+        """
+    )
+    inserted = 0
+    with engine.begin() as conn:
+        if earnings_rows:
+            rows_to_insert = _filter_versioned_rows(
+                conn=conn,
+                table="corporate_actions_calendar",
+                rows=earnings_rows,
+                match_columns=("symbol", "earnings_report_date"),
+                retrieval_column="date_retrieved",
+            )
+            if rows_to_insert:
+                logger.info("Writing %d upcoming earnings calendar rows", len(rows_to_insert))
+                conn.execute(insert_sql, rows_to_insert)
+                inserted += len(rows_to_insert)
+        if splits_rows:
+            rows_to_insert = _filter_versioned_rows(
+                conn=conn,
+                table="corporate_actions_calendar",
+                rows=splits_rows,
+                match_columns=("symbol", "split_date"),
+                retrieval_column="date_retrieved",
+            )
+            if rows_to_insert:
+                logger.info("Writing %d upcoming splits calendar rows", len(rows_to_insert))
+                conn.execute(insert_sql, rows_to_insert)
+                inserted += len(rows_to_insert)
+    return inserted
+
+
+def _iter_earnings_calendar_rows(
+    retrieval_date: datetime,
+    payload: object | None,
+) -> Iterable[dict[str, object]]:
+    """Yield upcoming earnings calendar rows from the payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw earnings calendar payload.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if payload is None:
+        return []
+    return [
+        {
+            "symbol": code,
+            "date_retrieved": retrieval_date,
+            "earnings_report_date": report_date,
+            "earnings_fiscal_date": fiscal_date,
+            "earnings_before_after_market": before_after,
+            "earnings_currency": currency,
+            "earnings_actual": _to_float(entry.get("actual")),
+            "earnings_estimate": _to_float(entry.get("estimate")),
+            "earnings_difference": _to_float(entry.get("difference")),
+            "earnings_percent": _to_float_allow_percent(entry.get("percent")),
+            "split_date": None,
+            "split_optionable": None,
+            "split_old_shares": None,
+            "split_new_shares": None,
+        }
+        for entry in _calendar_entries(payload)
+        for code in [_calendar_code(entry)]
+        if code is not None
+        for report_date in [
+            _parse_date(
+                _first_present(entry, ("report_date", "reportDate", "date"))
+            )
+        ]
+        if report_date is not None
+        for fiscal_date in [
+            _parse_date(
+                _first_present(
+                    entry,
+                    (
+                        "fiscal_date",
+                        "fiscalDate",
+                        "period_end",
+                        "period_end_date",
+                        "period",
+                    ),
+                )
+            )
+        ]
+        for before_after in [
+            _normalize_text_value(
+                _first_present(
+                    entry,
+                    ("before_or_after_market", "beforeOrAfterMarket"),
+                )
+            )
+        ]
+        for currency in [_normalize_text_value(entry.get("currency"))]
+    ]
+
+
+def _iter_split_calendar_rows(
+    retrieval_date: datetime,
+    payload: object | None,
+) -> Iterable[dict[str, object]]:
+    """Yield upcoming splits calendar rows from the payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw splits calendar payload.
+
+    Returns:
+        Iterable[dict[str, object]]: Row dictionaries for insertion.
+    """
+    if payload is None:
+        return []
+    return [
+        {
+            "symbol": code,
+            "date_retrieved": retrieval_date,
+            "earnings_report_date": None,
+            "earnings_fiscal_date": None,
+            "earnings_before_after_market": None,
+            "earnings_currency": None,
+            "earnings_actual": None,
+            "earnings_estimate": None,
+            "earnings_difference": None,
+            "earnings_percent": None,
+            "split_date": split_date,
+            "split_optionable": _parse_optionable(entry.get("optionable")),
+            "split_old_shares": _to_float(entry.get("old_shares")),
+            "split_new_shares": _to_float(entry.get("new_shares")),
+        }
+        for entry in _calendar_entries(payload)
+        for code in [_calendar_code(entry)]
+        if code is not None
+        for split_date in [
+            _parse_date(
+                _first_present(entry, ("split_date", "splitDate", "date"))
+            )
+        ]
+        if split_date is not None
+    ]
 
 
 def _iter_earnings_rows(
@@ -1689,7 +1791,6 @@ def _filter_versioned_rows(
     """
     if not rows:
         return []
-    rows = _coerce_sqlite_rows(rows, conn.engine.dialect.name)
     rel_tol, abs_tol = get_database_tolerances()
     where_clause = " AND ".join(f"{column} = :{column}" for column in match_columns)
     query = text(
@@ -1722,38 +1823,6 @@ def _filter_versioned_rows(
         return None if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol) else row
 
     return [row for row in map(_row_if_new, rows) if row is not None]
-
-
-def _coerce_sqlite_rows(
-    rows: list[dict[str, object]],
-    dialect_name: str,
-) -> list[dict[str, object]]:
-    """Coerce date/time/bool values for SQLite inserts.
-
-    Args:
-        rows (list[dict[str, object]]): Candidate rows for insertion.
-        dialect_name (str): SQLAlchemy dialect name.
-
-    Returns:
-        list[dict[str, object]]: Rows with SQLite-safe scalar values.
-    """
-    if dialect_name != "sqlite":
-        return rows
-    return [
-        {key: _coerce_sqlite_value(value) for key, value in row.items()}
-        for row in rows
-    ]
-
-
-def _coerce_sqlite_value(value: object) -> object:
-    """Convert Python date/time/bool values into SQLite-safe scalars."""
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, bool):
-        return int(value)
-    return value
 
 
 def _rows_equal(
@@ -1898,6 +1967,66 @@ def _first_value(values: Mapping[str, object], keys: tuple[str, ...]) -> float |
     return next((_to_float(values.get(key)) for key in keys if key in values), None)
 
 
+def _first_present(values: Mapping[str, object], keys: tuple[str, ...]) -> object | None:
+    """Return the first non-empty value from a mapping by key preference.
+
+    Args:
+        values (Mapping[str, object]): Mapping of raw fields.
+        keys (tuple[str, ...]): Candidate keys in order.
+
+    Returns:
+        object | None: First non-empty value, if present.
+    """
+    for key in keys:
+        if key in values:
+            value = values.get(key)
+            if value is not None:
+                return value
+    return None
+
+
+def _normalize_text_value(value: object) -> str | None:
+    """Normalize a value into a trimmed string when possible."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else None
+    return None
+
+
+def _calendar_entries(payload: object) -> Iterable[Mapping[str, object]]:
+    """Normalize calendar payloads into an iterable of entry mappings."""
+    if isinstance(payload, list):
+        entries = [entry for entry in payload if isinstance(entry, Mapping)]
+    elif isinstance(payload, Mapping):
+        data = payload.get("data")
+        if isinstance(data, list):
+            entries = [entry for entry in data if isinstance(entry, Mapping)]
+        else:
+            entries = [entry for entry in payload.values() if isinstance(entry, Mapping)]
+    else:
+        entries = []
+    return [entry for entry in entries if _calendar_code(entry) is not None]
+
+
+def _calendar_code(entry: Mapping[str, object]) -> str | None:
+    """Extract a ticker code from a calendar entry."""
+    value = _first_present(entry, ("code", "Code", "symbol", "ticker"))
+    return _normalize_text_value(value)
+
+
+def _parse_optionable(value: object) -> bool | None:
+    """Parse the splits optionable flag from a calendar entry."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized == "Y":
+            return True
+        if normalized == "N":
+            return False
+    return None
+
+
 def _to_float(value: object) -> float | None:
     """Convert a provider value to float when possible.
 
@@ -1920,6 +2049,16 @@ def _to_float(value: object) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _to_float_allow_percent(value: object) -> float | None:
+    """Convert a provider value to float, allowing trailing percent signs."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.endswith("%"):
+            stripped = stripped[:-1].strip()
+        return _to_float(stripped)
+    return _to_float(value)
 
 
 def _parse_date(value: object) -> date | None:

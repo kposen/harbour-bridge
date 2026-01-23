@@ -121,3 +121,26 @@ CREATE TABLE IF NOT EXISTS prices (
 
 CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
     ON prices (symbol, date);
+
+CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
+    symbol TEXT NOT NULL,
+    date_retrieved TIMESTAMPTZ NOT NULL,
+    earnings_report_date DATE NULL,
+    earnings_fiscal_date DATE NULL,
+    earnings_before_after_market TEXT NULL,
+    earnings_currency TEXT NULL,
+    earnings_actual DOUBLE PRECISION NULL,
+    earnings_estimate DOUBLE PRECISION NULL,
+    earnings_difference DOUBLE PRECISION NULL,
+    earnings_percent DOUBLE PRECISION NULL,
+    split_date DATE NULL,
+    split_optionable BOOLEAN NULL,
+    split_old_shares DOUBLE PRECISION NULL,
+    split_new_shares DOUBLE PRECISION NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_earnings
+    ON corporate_actions_calendar (symbol, earnings_report_date);
+
+CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_split
+    ON corporate_actions_calendar (symbol, split_date);

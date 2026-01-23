@@ -16,6 +16,7 @@ from src.io.database import (
     get_engine,
     get_latest_filing_date,
     get_latest_price_date,
+    write_corporate_actions_calendar,
     write_holders,
     write_financial_facts,
     write_earnings,
@@ -28,6 +29,8 @@ from src.io.database import (
 from src.io.reporting import export_model_to_excel
 from src.io.storage import (
     build_run_data_dir,
+    save_upcoming_earnings_payload,
+    save_upcoming_splits_payload,
     save_price_payload,
     save_raw_payload,
     save_share_data,
@@ -135,6 +138,63 @@ def fetch_prices(ticker: str, start_date: date | None) -> object | None:
     return payload
 
 
+def _fetch_calendar(endpoint: str, label: str, start_date: date, end_date: date) -> object | None:
+    """Fetch calendar data for a date range from EODHD.
+
+    Args:
+        endpoint (str): Calendar endpoint path (e.g., "calendar/earnings").
+        label (str): Logging label for the calendar request.
+        start_date (date): Start date for the calendar window.
+        end_date (date): End date for the calendar window.
+
+    Returns:
+        object | None: Calendar payload, or None on error.
+    """
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    params = {
+        "api_token": api_key,
+        "fmt": "json",
+        "from": start_date.isoformat(),
+        "to": end_date.isoformat(),
+    }
+    logger.info("Fetching upcoming %s calendar from %s to %s", label, start_date, end_date)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/{endpoint}",
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("Calendar %s request failed: %s", label, exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode %s calendar JSON: %s", label, exc)
+        return None
+    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+        logger.info("EODHD %s calendar error payload: %s", label, payload)
+        return None
+    if not isinstance(payload, (list, dict)):
+        logger.info("EODHD %s calendar response did not return JSON rows", label)
+        return None
+    if isinstance(payload, list):
+        logger.debug("Received %d %s calendar entries", len(payload), label)
+    return payload
+
+
+def fetch_upcoming_earnings(start_date: date, end_date: date) -> object | None:
+    """Fetch upcoming earnings reports for a date range."""
+    return _fetch_calendar("calendar/earnings", "earnings", start_date, end_date)
+
+
+def fetch_upcoming_splits(start_date: date, end_date: date) -> object | None:
+    """Fetch upcoming splits for a date range."""
+    return _fetch_calendar("calendar/splits", "splits", start_date, end_date)
+
+
 def run_pipeline(results_dir: Path) -> None:
     """Run the imperative pipeline: fetch -> build history -> forecast -> save.
 
@@ -161,12 +221,34 @@ def run_pipeline(results_dir: Path) -> None:
     else:
         logger.info("Using Postgres database connection from HARBOUR_BRIDGE_DB_URL")
         ensure_schema(engine)
+    calendar_retrieval = datetime.now(UTC)
+    calendar_start = calendar_retrieval.date()
+    calendar_end = calendar_start + timedelta(days=30)
+    upcoming_earnings = fetch_upcoming_earnings(calendar_start, calendar_end)
+    if upcoming_earnings is not None:
+        save_upcoming_earnings_payload(data_dir, upcoming_earnings)
+    else:
+        logger.info("Skipping upcoming earnings payload save due to fetch error")
+    upcoming_splits = fetch_upcoming_splits(calendar_start, calendar_end)
+    if upcoming_splits is not None:
+        save_upcoming_splits_payload(data_dir, upcoming_splits)
+    else:
+        logger.info("Skipping upcoming splits payload save due to fetch error")
+    if engine is not None:
+        inserted = write_corporate_actions_calendar(
+            engine=engine,
+            retrieval_date=calendar_retrieval,
+            earnings_payload=upcoming_earnings,
+            splits_payload=upcoming_splits,
+        )
+        if inserted == 0:
+            logger.info("No corporate actions calendar rows inserted")
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
-        logger.info("No tickers scheduled for update; pipeline complete")
-        return
-    logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
-    logger.debug("Tickers scheduled for update: %s", tickers_to_process)
+        logger.info("No tickers scheduled for update; skipping ticker processing")
+    else:
+        logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
+        logger.debug("Tickers scheduled for update: %s", tickers_to_process)
     provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)

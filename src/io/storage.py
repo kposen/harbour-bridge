@@ -117,6 +117,38 @@ def save_price_payload(run_dir: Path, ticker: str, payload: object) -> Path:
     return path
 
 
+def save_upcoming_earnings_payload(run_dir: Path, payload: object) -> Path:
+    """Persist the upcoming earnings calendar payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        payload (object): Raw provider payload for upcoming earnings.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    path = run_dir / "upcoming-earnings.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved upcoming earnings payload to %s", path)
+    return path
+
+
+def save_upcoming_splits_payload(run_dir: Path, payload: object) -> Path:
+    """Persist the upcoming splits calendar payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        payload (object): Raw provider payload for upcoming splits.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    path = run_dir / "upcoming-splits.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved upcoming splits payload to %s", path)
+    return path
+
+
 def _normalize_ticker(ticker: str) -> str:
     """Normalize ticker symbols for consistent filenames.
 

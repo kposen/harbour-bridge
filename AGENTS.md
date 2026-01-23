@@ -5,7 +5,8 @@
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
 - Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
-- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json` and `*.prices.json`.
+- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`, `*.prices.json`,
+  `upcoming-earnings.json`, and `upcoming-splits.json`.
 - Normalized JSON models are stored under `data/<TICKER>.json`.
 
 ## Build, Test, and Development Commands
@@ -29,6 +30,7 @@
 ## Testing Guidelines
 - Use `pytest` with file names like `test_*.py` in `tests/`.
 - Test command: `pytest -q`.
+- Database integration tests require `HARBOUR_BRIDGE_DB_URL` and skip when unset.
 
 ## Static Analysis & Data Validation
 - Use `mypy` in strict mode for static analysis and enforce type hints on public APIs.

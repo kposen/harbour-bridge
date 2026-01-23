@@ -2,10 +2,14 @@ from __future__ import annotations
 
 """Tests for end-of-day price ingestion and storage."""
 
+import os
+import uuid
 from datetime import UTC, date, datetime
 from typing import Any
 
+import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 import main
 from src.io.database import (
@@ -15,6 +19,23 @@ from src.io.database import (
     write_prices,
 )
 from src.io.storage import save_price_payload
+
+
+def _get_engine() -> Engine:
+    """Return a Postgres engine for integration tests."""
+    database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
+    if not database_url:
+        pytest.skip("HARBOUR_BRIDGE_DB_URL not set; skipping Postgres integration tests")
+    engine = create_engine(database_url, future=True)
+    if engine.dialect.name != "postgresql":
+        pytest.skip("HARBOUR_BRIDGE_DB_URL is not a Postgres URL")
+    ensure_schema(engine)
+    return engine
+
+
+def _unique_symbol(prefix: str) -> str:
+    """Build a unique ticker symbol for database tests."""
+    return f"{prefix}{uuid.uuid4().hex[:6].upper()}.US"
 
 
 def _price_entry(
@@ -60,8 +81,8 @@ def test_get_latest_price_date_parses_dates() -> None:
     Returns:
         None: Assertions validate parsing behavior.
     """
-    engine = create_engine("sqlite:///:memory:", future=True)
-    ensure_schema(engine)
+    engine = _get_engine()
+    symbol = _unique_symbol("AAPL")
     # Insert two dates and ensure the latest is returned.
     with engine.begin() as conn:
         conn.execute(
@@ -95,7 +116,7 @@ def test_get_latest_price_date_parses_dates() -> None:
             ),
             [
                 {
-                    "symbol": "AAPL.US",
+                    "symbol": symbol,
                     "date": date(2025, 1, 1),
                     "retrieval_date": datetime(2025, 1, 2, tzinfo=UTC),
                     "provider": "EODHD",
@@ -107,7 +128,7 @@ def test_get_latest_price_date_parses_dates() -> None:
                     "volume": 1000.0,
                 },
                 {
-                    "symbol": "AAPL.US",
+                    "symbol": symbol,
                     "date": date(2025, 2, 1),
                     "retrieval_date": datetime(2025, 2, 2, tzinfo=UTC),
                     "provider": "EODHD",
@@ -120,7 +141,7 @@ def test_get_latest_price_date_parses_dates() -> None:
                 },
             ],
         )
-    latest = get_latest_price_date(engine, "AAPL.US", "EODHD")
+    latest = get_latest_price_date(engine, symbol, "EODHD")
     assert latest == date(2025, 2, 1)
 
 
@@ -133,20 +154,20 @@ def test_write_prices_dedups_identical_versions() -> None:
     Returns:
         None: Assertions validate versioning behavior.
     """
-    engine = create_engine("sqlite:///:memory:", future=True)
-    ensure_schema(engine)
+    engine = _get_engine()
+    symbol = _unique_symbol("AAPL")
     payload = [_price_entry("2025-01-01")]
 
     first = write_prices(
         engine=engine,
-        symbol="AAPL.US",
+        symbol=symbol,
         provider="EODHD",
         retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=payload,
     )
     second = write_prices(
         engine=engine,
-        symbol="AAPL.US",
+        symbol=symbol,
         provider="EODHD",
         retrieval_date=datetime(2025, 2, 2, tzinfo=UTC),
         raw_data=payload,
@@ -154,7 +175,10 @@ def test_write_prices_dedups_identical_versions() -> None:
 
     # The second insert should be skipped because values are identical.
     with engine.begin() as conn:
-        count = conn.execute(text("SELECT COUNT(*) FROM prices")).scalar()
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM prices WHERE symbol = :symbol AND provider = :provider"),
+            {"symbol": symbol, "provider": "EODHD"},
+        ).scalar()
     assert first == 1
     assert second == 0
     assert count == 1
@@ -169,12 +193,12 @@ def test_write_prices_inserts_on_value_change() -> None:
     Returns:
         None: Assertions validate versioning behavior.
     """
-    engine = create_engine("sqlite:///:memory:", future=True)
-    ensure_schema(engine)
+    engine = _get_engine()
+    symbol = _unique_symbol("AAPL")
     payload = [_price_entry("2025-01-01", close_value="11")]
     write_prices(
         engine=engine,
-        symbol="AAPL.US",
+        symbol=symbol,
         provider="EODHD",
         retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=payload,
@@ -182,7 +206,7 @@ def test_write_prices_inserts_on_value_change() -> None:
     updated_payload = [_price_entry("2025-01-01", close_value="11.5")]
     inserted = write_prices(
         engine=engine,
-        symbol="AAPL.US",
+        symbol=symbol,
         provider="EODHD",
         retrieval_date=datetime(2025, 2, 2, tzinfo=UTC),
         raw_data=updated_payload,
@@ -190,7 +214,10 @@ def test_write_prices_inserts_on_value_change() -> None:
 
     # Only the changed row should insert as a new version.
     with engine.begin() as conn:
-        count = conn.execute(text("SELECT COUNT(*) FROM prices")).scalar()
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM prices WHERE symbol = :symbol AND provider = :provider"),
+            {"symbol": symbol, "provider": "EODHD"},
+        ).scalar()
     assert inserted == 1
     assert count == 2
 
@@ -322,14 +349,14 @@ def test_price_start_date_uses_latest_date() -> None:
     Returns:
         None: Assertions validate start-date selection.
     """
-    engine = create_engine("sqlite:///:memory:", future=True)
-    ensure_schema(engine)
+    engine = _get_engine()
+    symbol = _unique_symbol("AAPL")
     write_prices(
         engine=engine,
-        symbol="AAPL.US",
+        symbol=symbol,
         provider="EODHD",
         retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
         raw_data=[_price_entry("2025-01-01")],
     )
-    start_date = main._price_start_date(engine, "AAPL.US", "EODHD")
+    start_date = main._price_start_date(engine, symbol, "EODHD")
     assert start_date == date(2025, 1, 1)

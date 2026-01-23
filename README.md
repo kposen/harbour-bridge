@@ -52,7 +52,8 @@ shell.
 4. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
 5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
 6. **Raw payloads**: Stored under `data/<timestamp>` for each run, including
-   `*.fundamentals.json` and `*.prices.json`.
+   `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`, and
+   `upcoming-splits.json`.
 
 ## Database Storage (Optional)
 
@@ -76,6 +77,9 @@ Run tests with:
 ```bash
 pytest -q
 ```
+
+Database integration tests require `HARBOUR_BRIDGE_DB_URL` to be set and will
+be skipped when it is missing.
 
 ## Repository Structure
 

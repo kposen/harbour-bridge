@@ -2,16 +2,37 @@ from __future__ import annotations
 
 """Tests for database ingestion helpers and staleness logic."""
 
+import os
+import uuid
 from datetime import UTC, date, datetime
 
+import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 import main
 from src.io.database import _iter_reported_rows, ensure_schema, get_latest_filing_date
 
 
+def _get_engine() -> Engine:
+    """Return a Postgres engine for integration tests."""
+    database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
+    if not database_url:
+        pytest.skip("HARBOUR_BRIDGE_DB_URL not set; skipping Postgres integration tests")
+    engine = create_engine(database_url, future=True)
+    if engine.dialect.name != "postgresql":
+        pytest.skip("HARBOUR_BRIDGE_DB_URL is not a Postgres URL")
+    ensure_schema(engine)
+    return engine
+
+
+def _unique_symbol(prefix: str) -> str:
+    """Build a unique ticker symbol for database tests."""
+    return f"{prefix}{uuid.uuid4().hex[:6].upper()}.US"
+
+
 def test_staleness_logic_with_date_columns() -> None:
-    """Staleness logic should parse stored dates from the database.
+    """Staleness logic should parse stored dates from Postgres.
 
     Args:
         None
@@ -19,8 +40,8 @@ def test_staleness_logic_with_date_columns() -> None:
     Returns:
         None: Assertions validate staleness behavior.
     """
-    engine = create_engine("sqlite:///:memory:", future=True)
-    ensure_schema(engine)
+    engine = _get_engine()
+    symbol = _unique_symbol("TEST")
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -54,7 +75,7 @@ def test_staleness_logic_with_date_columns() -> None:
                 """
             ),
             {
-                "symbol": "TEST.US",
+                "symbol": symbol,
                 "fiscal_date": date(2024, 12, 31),
                 "filing_date": date(2025, 1, 15),
                 "retrieval_date": datetime(2025, 2, 1, tzinfo=UTC),
@@ -68,7 +89,7 @@ def test_staleness_logic_with_date_columns() -> None:
             },
         )
 
-    latest = get_latest_filing_date(engine, "TEST.US")
+    latest = get_latest_filing_date(engine, symbol)
     assert latest == date(2025, 1, 15)
 
     class FixedDatetime(datetime):
@@ -91,8 +112,8 @@ def test_staleness_logic_with_date_columns() -> None:
     original_datetime = main.datetime
     try:
         main.datetime = FixedDatetime  # type: ignore[assignment]
-        stale = main._filter_stale_tickers(["TEST.US"], engine)
-        assert stale == ["TEST.US"]
+        stale = main._filter_stale_tickers([symbol], engine)
+        assert stale == [symbol]
     finally:
         main.datetime = original_datetime
 
