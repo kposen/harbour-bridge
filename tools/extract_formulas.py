@@ -4,6 +4,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
+from openpyxl.workbook.workbook import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 
 SHEET_NAMES = (
@@ -14,7 +16,7 @@ SHEET_NAMES = (
 )
 
 
-def _resolve_defined_names(workbook) -> dict[str, str]:
+def _resolve_defined_names(workbook: Workbook) -> dict[str, str]:
     resolved_map: dict[str, list[str]] = {}
     defined_names = workbook.defined_names
     try:
@@ -41,7 +43,7 @@ def _resolve_defined_names(workbook) -> dict[str, str]:
     return {name: ", ".join(coords) for name, coords in resolved_map.items()}
 
 
-def _collect_formulas(worksheet) -> list[str]:
+def _collect_formulas(worksheet: Worksheet) -> list[str]:
     lines: list[str] = []
     for row in worksheet.iter_rows():
         for cell in row:

@@ -50,8 +50,6 @@ def get_database_tolerances() -> tuple[float, float]:
     return rel_tol, abs_tol
 
 
-
-
 def get_calendar_lookahead_days() -> int:
     """Return the look-ahead window for corporate actions calendars.
 
@@ -88,4 +86,3 @@ def _coerce_int(value: object, default: int) -> int:
         return int(value) if value is not None else default
     except (TypeError, ValueError):
         return default
-

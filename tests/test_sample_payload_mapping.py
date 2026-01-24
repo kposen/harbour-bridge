@@ -25,7 +25,7 @@ def _load_payload() -> dict[str, Any]:
     return json.loads(payload_path.read_text())
 
 
-def _find_item(history, period: date):
+def _find_item(history: list[LineItems], period: date) -> LineItems:
     """Find a LineItems entry by period.
 
     Args:

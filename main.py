@@ -346,6 +346,8 @@ def run_download_pipeline(
     logger.info("Starting download pipeline")
     if engine is None:
         engine = _init_engine(database_required=True)
+        if engine is None:
+            raise RuntimeError("Database engine is required for download pipeline")
     data_dir = build_run_data_dir(results_dir.name)
     logger.info("Created data directory: %s", data_dir)
     if tickers:
@@ -358,7 +360,13 @@ def run_download_pipeline(
     calendar_start = run_retrieval.date()
     calendar_lookahead = get_calendar_lookahead_days()
     logger.debug("Calendar look-ahead requested: %d days", calendar_lookahead)
-    if calendar_lookahead > 30:
+    if calendar_lookahead < 1:
+        logger.warning(
+            "Calendar look-ahead of %d days is invalid; using 1",
+            calendar_lookahead,
+        )
+        calendar_lookahead = 1
+    elif calendar_lookahead > 30:
         logger.warning(
             "Calendar look-ahead of %d days exceeds max 30; using 30",
             calendar_lookahead,
@@ -548,6 +556,8 @@ def run_forecast_pipeline(
     logger.info("Starting forecast pipeline")
     if engine is None:
         engine = _init_engine(database_required=True)
+        if engine is None:
+            raise RuntimeError("Database engine is required for forecast pipeline")
     if run_retrieval is None:
         run_retrieval = datetime.now(UTC)
     if not tickers:
@@ -635,7 +645,7 @@ def _build_results_dir(results_root: Path) -> Path:
     return run_dir
 
 
-def _filter_stale_tickers(tickers: list[str], engine) -> list[str]:
+def _filter_stale_tickers(tickers: list[str], engine: Engine | None) -> list[str]:
     """Filter tickers to those needing updates based on filing date age.
 
     Args:
@@ -668,7 +678,7 @@ def _filter_stale_tickers(tickers: list[str], engine) -> list[str]:
     return stale_tickers
 
 
-def _should_update(ticker: str, engine, cutoff: date) -> bool:
+def _should_update(ticker: str, engine: Engine, cutoff: date) -> bool:
     """Return True when a ticker should be refreshed.
 
     Args:
@@ -690,7 +700,7 @@ def _should_update(ticker: str, engine, cutoff: date) -> bool:
     return False
 
 
-def _price_start_date(engine, ticker: str, provider: str) -> date | None:
+def _price_start_date(engine: Engine | None, ticker: str, provider: str) -> date | None:
     """Return the start date for price downloads.
 
     Args:
@@ -740,52 +750,6 @@ def _month_end_day(year: int, month: int) -> int:
     return (next_month - timedelta(days=1)).day
 
 
-def _extract_filing_dates(raw_data: dict[str, Any]) -> dict[date, date]:
-    """Extract filing dates from an EODHD payload keyed by fiscal date.
-
-    Args:
-        raw_data (dict[str, Any]): Raw provider payload.
-
-    Returns:
-        dict[date, date]: Mapping from fiscal date to filing date.
-    """
-    financials = raw_data.get("Financials")
-    if not isinstance(financials, dict):
-        return {}
-    pairs = (
-        (fiscal_date, filing_date)
-        for statement_key in ("Income_Statement", "Balance_Sheet", "Cash_Flow")
-        for statement in [financials.get(statement_key)]
-        if isinstance(statement, dict)
-        for yearly in [statement.get("yearly")]
-        if isinstance(yearly, dict)
-        for fiscal_str, values in yearly.items()
-        if isinstance(values, dict)
-        for fiscal_date in [_parse_date(fiscal_str)]
-        if fiscal_date is not None
-        for filing_date in [_parse_date(values.get("filing_date"))]
-        if filing_date is not None
-    )
-    return dict(pairs)
-
-
-def _parse_date(value: object) -> date | None:
-    """Parse a date from an ISO string.
-
-    Args:
-        value (object): Value to parse.
-
-    Returns:
-        date | None: Parsed date if possible.
-    """
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
 
 
 if __name__ == "__main__":

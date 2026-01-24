@@ -12,6 +12,7 @@ from math import isclose
 
 from toolz.itertoolz import mapcat
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import Connection
 
 from src.domain.schemas import FinancialModel, LineItems
 from src.logic.historic_builder import EODHD_FIELD_MAP
@@ -2501,7 +2502,7 @@ def _normalize_outstanding_block(block: object) -> Iterable[Mapping[str, object]
 
 
 def _filter_versioned_rows(
-    conn,
+    conn: Connection,
     table: str,
     rows: list[dict[str, object]],
     match_columns: tuple[str, ...],

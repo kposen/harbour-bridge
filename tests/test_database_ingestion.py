@@ -30,6 +30,11 @@ def _get_engine() -> Engine:
     engine = create_engine(database_url, future=True)
     if engine.dialect.name != "postgresql":
         pytest.skip("HARBOUR_BRIDGE_DB_URL is not a Postgres URL")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        pytest.skip(f"HARBOUR_BRIDGE_DB_URL unavailable; skipping Postgres tests: {exc}")
     ensure_schema(engine)
     return engine
 

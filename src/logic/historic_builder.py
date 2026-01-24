@@ -7,7 +7,7 @@ from functools import partial
 from itertools import chain
 from math import isclose
 from operator import itemgetter
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from toolz import assoc
 
@@ -65,10 +65,6 @@ EODHD_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "debt_cash_flow": ("cashFromDebt",),
     "cash_from_financing": ("totalCashFromFinancingActivities",),
 }
-
-# Placeholder mapping for a future FactSet provider.
-FACTSET_FIELD_MAP: dict[str, tuple[str, ...]] = {}
-
 
 def build_historic_model(
     raw_data: dict[str, Any],
@@ -783,7 +779,7 @@ def _negative_value(record: Mapping[str, Any], *keys: str) -> float | None:
     return -value
 
 
-def _value_in(record: Mapping[str, Any]):
+def _value_in(record: Mapping[str, Any]) -> Callable[..., float | None]:
     """Curry a record into a value lookup function.
 
     Args:
@@ -795,7 +791,7 @@ def _value_in(record: Mapping[str, Any]):
     return partial(_value, record)
 
 
-def _negative_value_in(record: Mapping[str, Any]):
+def _negative_value_in(record: Mapping[str, Any]) -> Callable[..., float | None]:
     """Curry a record into a negative value lookup function.
 
     Args:

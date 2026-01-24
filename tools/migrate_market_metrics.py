@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -46,13 +47,13 @@ def _section_order_sql() -> str:
     return f"CASE section {clauses} ELSE 999 END"
 
 
-def _ensure_source_exists(conn, table: str) -> None:
+def _ensure_source_exists(conn: Connection, table: str) -> None:
     result = conn.execute(text("SELECT to_regclass(:table)"), {"table": table}).scalar()
     if result is None:
         raise RuntimeError(f"Source table '{table}' not found")
 
 
-def _load_metric_types(conn, table: str) -> dict[str, str]:
+def _load_metric_types(conn: Connection, table: str) -> dict[str, str]:
     rows = conn.execute(
         text(
             f"""
@@ -112,7 +113,7 @@ def _market_metrics_table_sql(table: str, metric_types: Mapping[str, str]) -> st
     """
 
 
-def _ensure_target_exists(conn, table: str, metric_types: Mapping[str, str]) -> None:
+def _ensure_target_exists(conn: Connection, table: str, metric_types: Mapping[str, str]) -> None:
     result = conn.execute(text("SELECT to_regclass(:table)"), {"table": table}).scalar()
     if result is not None:
         return
@@ -126,7 +127,7 @@ def _ensure_target_exists(conn, table: str, metric_types: Mapping[str, str]) -> 
         logger.warning("Target table '%s' still not visible after DDL", table)
 
 
-def _log_connection_context(conn, label: str) -> None:
+def _log_connection_context(conn: Connection, label: str) -> None:
     row = conn.execute(text("SELECT current_database(), current_schema()")).fetchone()
     if row is None:
         return
@@ -180,7 +181,7 @@ def _row_params(row: Mapping[str, object], metric_columns: list[str]) -> dict[st
 
 
 def _flush_rows(
-    conn,
+    conn: Connection,
     insert_sql: text,
     rows: list[dict[str, object]],
     metric_columns: list[str],

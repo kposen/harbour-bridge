@@ -9,7 +9,7 @@ from typing import Callable, Iterable, Mapping
 
 from more_itertools import pairwise, tail
 from toolz import pipe
-from toolz.curried import get, map as cmap
+from toolz.curried import map as cmap
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
 

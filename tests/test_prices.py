@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -29,6 +30,11 @@ def _get_engine() -> Engine:
     engine = create_engine(database_url, future=True)
     if engine.dialect.name != "postgresql":
         pytest.skip("HARBOUR_BRIDGE_DB_URL is not a Postgres URL")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        pytest.skip(f"HARBOUR_BRIDGE_DB_URL unavailable; skipping Postgres tests: {exc}")
     ensure_schema(engine)
     return engine
 
@@ -248,7 +254,7 @@ def test_iter_price_rows_accepts_mapping_payload() -> None:
     assert dates == {date(2025, 1, 1), date(2025, 1, 2)}
 
 
-def test_fetch_prices_uses_from_param(monkeypatch) -> None:
+def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fetch should include 'from' only when a start date is provided.
 
     Args:
@@ -325,7 +331,7 @@ def test_fetch_prices_uses_from_param(monkeypatch) -> None:
     assert captured["params"].get("from") == "2025-01-15"
 
 
-def test_save_price_payload_writes_expected_file(tmp_path) -> None:
+def test_save_price_payload_writes_expected_file(tmp_path: Path) -> None:
     """Price payloads should be written with the expected filename.
 
     Args:

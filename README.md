@@ -49,7 +49,7 @@ shell.
   connection string (e.g., `postgresql+psycopg://user:pass@localhost:5432/harbour_bridge`).
   Requires the `psycopg` driver (included in `requirements.txt`).
 - `calendar.lookahead_days`: Optional. Days to fetch corporate action calendars
-  (capped at 30 by the pipeline).
+  (clamped to 1-30 by the pipeline).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 
