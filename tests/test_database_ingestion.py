@@ -11,7 +11,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 import main
-from src.io.database import _iter_reported_rows, ensure_schema, get_latest_filing_date
+from src.io.database import (
+    _iter_reported_rows,
+    ensure_schema,
+    get_latest_filing_date,
+    get_symbols_with_history,
+    load_historic_model_from_db,
+    write_reported_facts,
+)
 from src.logic.historic_builder import EODHD_FIELD_MAP
 
 
@@ -181,3 +188,73 @@ def test_reported_facts_ingestion_net_income_cfs() -> None:
         None,
     )
     assert raw_row is not None
+
+
+def test_load_historic_model_from_db() -> None:
+    """Reported facts should load into a FinancialModel from Postgres.
+
+    Args:
+        None
+
+    Returns:
+        None: Assertions validate database load behavior.
+    """
+    engine = _get_engine()
+    symbol = _unique_symbol("DB")
+    raw_data = {
+        "Financials": {
+            "Income_Statement": {
+                "yearly": {
+                    "2024-12-31": {
+                        "totalRevenue": "500",
+                        "grossProfit": "200",
+                        "netIncome": "120",
+                        "filing_date": "2025-02-15",
+                    }
+                }
+            },
+            "Balance_Sheet": {
+                "yearly": {
+                    "2024-12-31": {
+                        "totalAssets": "1000",
+                        "totalLiab": "400",
+                        "totalStockholderEquity": "600",
+                    }
+                }
+            },
+            "Cash_Flow": {
+                "yearly": {
+                    "2024-12-31": {
+                        "netIncome": "120",
+                        "totalCashFromOperatingActivities": "150",
+                    }
+                }
+            },
+        },
+        "outstandingShares": {
+            "annual": {
+                "2024-12-31": {"dateFormatted": "2024-12-31", "shares": "100"}
+            }
+        },
+    }
+    write_reported_facts(
+        engine=engine,
+        symbol=symbol,
+        provider="EODHD",
+        retrieval_date=datetime(2025, 3, 1, tzinfo=UTC),
+        raw_data=raw_data,
+    )
+    symbols = get_symbols_with_history(engine, provider="EODHD")
+    assert symbol in symbols
+    model, _filing_dates = load_historic_model_from_db(
+        engine=engine,
+        symbol=symbol,
+        provider="EODHD",
+        period_type="annual",
+    )
+    assert len(model.history) == 1
+    item = model.history[0]
+    assert item.income["revenue"] == 500.0
+    assert item.income["gross_profit"] == 200.0
+    assert item.income["shares_diluted"] == 100.0
+    assert item.balance["total_assets"] == 1000.0

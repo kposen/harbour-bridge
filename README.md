@@ -27,20 +27,27 @@ shell.
    ```bash
    export EODHD_API_KEY="your_key_here"
    ```
-4. Run the pipeline (provide one or more tickers):
+4. Run the download pipeline (provide one or more tickers):
    ```bash
-   python main.py AAPL.US
+   python main.py download AAPL.US
    ```
+5. Run the forecast pipeline from database facts:
+   ```bash
+   python main.py forecast AAPL.US
+   ```
+   You can also run both steps together with:
+   ```bash
+   python main.py all AAPL.US
+   ```
+   Omitting the command defaults to `all`.
 
 ## Configuration
 
 - `EODHD_API_KEY`: Required. Used by `fetch_data` to call the EODHD fundamentals
   endpoint.
-- `HARBOUR_BRIDGE_DB_URL`: Optional. Postgres connection string
-  (e.g., `postgresql+psycopg://user:pass@localhost:5432/harbour_bridge`).
+- `HARBOUR_BRIDGE_DB_URL`: Required for `download` and `forecast`. Postgres
+  connection string (e.g., `postgresql+psycopg://user:pass@localhost:5432/harbour_bridge`).
   Requires the `psycopg` driver (included in `requirements.txt`).
-- `database.require_db`: Optional. When true, the pipeline will abort if
-  `HARBOUR_BRIDGE_DB_URL` is not set.
 - `calendar.lookahead_days`: Optional. Days to fetch corporate action calendars
   (capped at 30 by the pipeline).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
@@ -48,18 +55,15 @@ shell.
 
 ## Data Flow
 
-1. **Fetch**: `fetch_data` calls the EODHD fundamentals endpoint.
-2. **Fetch prices**: `fetch_prices` calls the EODHD end-of-day endpoint and stores raw payloads.
-3. **Normalize**: `build_historic_model` converts provider fields into
-   `LineItems` using an external mapping (`EODHD_FIELD_MAP`).
-4. **Forecast**: `generate_forecast` uses averaged margins and growth rates.
-5. **Persist**: `save_share_data` writes JSON to `data/<TICKER>.json`.
-6. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
-7. **Calendars**: Upcoming earnings, splits, and dividends are fetched each run.
-8. **Raw payloads**: Stored under `data/<timestamp>` for each run, including
+1. **Download**: `download` fetches fundamentals, prices, calendars, and exchange lists.
+2. **Persist raw payloads**: Stored under `data/<timestamp>` for each run, including
    `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`,
    `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`, and
    `exchanges-list.json`.
+3. **Database**: Reported facts and price history are written to Postgres.
+4. **Forecast**: `forecast` loads reported facts from Postgres, runs
+   `generate_forecast`, and exports reports.
+5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
 
 ## Database Storage (Optional)
 
@@ -71,9 +75,9 @@ statement, line item, and value source to preserve versions and reported vs
 calculated values. The primary key for `prices` includes symbol, date,
 retrieval_date, and provider for versioned price history.
 
-When `HARBOUR_BRIDGE_DB_URL` is set, the pipeline runs preflight checks before
-downloading data. This validates connectivity and performs a write/read/delete
-round-trip against a scratch table named `pipeline_scratch`. Failures abort the run.
+The `download` and `forecast` commands run preflight checks before accessing
+Postgres. This validates connectivity and performs a write/read/delete round-trip
+against a scratch table named `pipeline_scratch`. Failures abort the run.
 The exchange list is stored in `exchange_list` with explicit columns for
 `name`, `operating_mic`, `country`, `currency`, `country_iso2`, and
 `country_iso3`.

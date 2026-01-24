@@ -1,22 +1,27 @@
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import requests
+from sqlalchemy.engine import Engine
 
-from src.config import get_calendar_lookahead_days, get_database_required
-from src.domain.schemas import Assumptions
+from src.config import get_calendar_lookahead_days
+
+from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
     ensure_schema,
     get_engine,
     get_latest_filing_date,
     get_latest_price_date,
+    get_symbols_with_history,
+    load_historic_model_from_db,
     run_database_preflight,
     write_corporate_actions_calendar,
     write_exchange_list,
@@ -41,28 +46,33 @@ from src.io.storage import (
     save_share_data,
 )
 from src.logic.forecasting import generate_forecast
-from src.logic.historic_builder import build_historic_model
 from src.logic.validation import validate_eodhd_payload
 
 
 logger = logging.getLogger(__name__)
 
 
-def get_tickers_needing_update() -> list[str]:
-    """Return tickers that should be refreshed by the pipeline.
+def _normalize_tickers(tickers: Iterable[str]) -> list[str]:
+    """Normalize ticker inputs into a list of non-empty strings."""
+    return [ticker for ticker in (ticker.strip() for ticker in tickers) if ticker]
 
-    Args:
-        None
 
-    Returns:
-        list[str]: Ticker symbols requiring updates.
-    """
-    # Allow explicit CLI args; otherwise fall back to the placeholder.
-    cli_tickers = list(filter(None, map(str.strip, sys.argv[1:])))
-    if cli_tickers:
-        return cli_tickers
-    # Placeholder: wire this to a watchlist or datastore later.
-    return []
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse CLI arguments for pipeline commands."""
+    parser = argparse.ArgumentParser(description="Harbour Bridge pipeline runner")
+    subparsers = parser.add_subparsers(dest="command")
+    for command, help_text in (
+        ("download", "Download provider data and populate the database."),
+        ("forecast", "Generate forecasts from database facts."),
+        ("all", "Run download then forecast."),
+    ):
+        sub = subparsers.add_parser(command, help=help_text)
+        sub.add_argument("tickers", nargs="*", help="Tickers to process (e.g., AAPL.US)")
+    if not argv:
+        argv = ["all"]
+    elif argv[0] not in {"download", "forecast", "all"}:
+        argv = ["all", *argv]
+    return parser.parse_args(argv)
 
 
 def fetch_data(ticker: str) -> dict[str, Any] | None:
@@ -267,43 +277,44 @@ def fetch_exchange_list() -> object | None:
     return payload
 
 
-def run_pipeline(results_dir: Path) -> None:
-    """Run the imperative pipeline: fetch -> build history -> forecast -> save.
+def _init_engine(database_required: bool) -> Engine | None:
+    """Initialize a Postgres engine with preflight checks."""
+    database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
+    if not database_url:
+        if database_required:
+            logger.error("HARBOUR_BRIDGE_DB_URL is required but not set; aborting pipeline")
+            sys.exit(1)
+        logger.info("HARBOUR_BRIDGE_DB_URL not set; skipping database setup")
+        return None
+    engine = get_engine(database_url)
+    logger.info("Using Postgres database connection from HARBOUR_BRIDGE_DB_URL")
+    logger.info("Starting preflight checks")
+    try:
+        ensure_schema(engine)
+        run_database_preflight(engine)
+    except Exception as exc:
+        logger.exception("Database preflight failed; aborting pipeline: %s", exc)
+        sys.exit(1)
+    logger.info("Preflight checks complete")
+    return engine
 
-    Args:
-        results_dir (Path): Directory for run outputs.
 
-    Returns:
-        None: Side effects are persisted to storage.
-    """
-    # Keep assumptions in the shell so logic modules stay pure.
-    assumptions = Assumptions(growth_rates={}, margins={})
-    tickers = get_tickers_needing_update()
+def run_download_pipeline(
+    results_dir: Path,
+    tickers: list[str],
+    engine: Engine | None = None,
+) -> list[str]:
+    """Download data and populate the database."""
+    logger.info("Starting download pipeline")
+    if engine is None:
+        engine = _init_engine(database_required=True)
+    data_dir = build_run_data_dir(results_dir.name)
+    logger.info("Created data directory: %s", data_dir)
     if tickers:
         logger.info("Loaded %d tickers to evaluate", len(tickers))
         logger.debug("Candidate tickers: %s", tickers)
     else:
-        logger.info("No tickers provided; pipeline will exit after setup")
-    data_dir = build_run_data_dir(results_dir.name)
-    logger.info("Created data directory: %s", data_dir)
-    database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
-    engine = get_engine(database_url) if database_url else None
-    logger.info("Starting preflight checks")
-    database_required = get_database_required()
-    if engine is None:
-        if database_required:
-            logger.error("HARBOUR_BRIDGE_DB_URL is required but not set; aborting pipeline")
-            sys.exit(1)
-        logger.info("HARBOUR_BRIDGE_DB_URL not set; skipping database preflight checks")
-    else:
-        logger.info("Using Postgres database connection from HARBOUR_BRIDGE_DB_URL")
-        try:
-            ensure_schema(engine)
-            run_database_preflight(engine)
-        except Exception as exc:
-            logger.exception("Database preflight failed; aborting pipeline: %s", exc)
-            sys.exit(1)
-    logger.info("Preflight checks complete")
+        logger.info("No tickers provided; download pipeline will only refresh calendars")
     calendar_retrieval = datetime.now(UTC)
     calendar_start = calendar_retrieval.date()
     calendar_lookahead = get_calendar_lookahead_days()
@@ -357,33 +368,31 @@ def run_pipeline(results_dir: Path) -> None:
         dividend_nonempty_days,
         dividend_total_entries,
     )
-    if engine is not None:
-        exchange_inserted = write_exchange_list(
-            engine=engine,
-            retrieval_date=calendar_retrieval,
-            payload=exchange_payload,
-        )
-        if exchange_inserted == 0:
-            logger.info("No exchange list rows inserted")
-        inserted = write_corporate_actions_calendar(
-            engine=engine,
-            retrieval_date=calendar_retrieval,
-            earnings_payload=upcoming_earnings,
-            splits_payload=upcoming_splits,
-            dividends_payloads=dividend_payloads,
-        )
-        if inserted == 0:
-            logger.info("No corporate actions calendar rows inserted")
+    exchange_inserted = write_exchange_list(
+        engine=engine,
+        retrieval_date=calendar_retrieval,
+        payload=exchange_payload,
+    )
+    if exchange_inserted == 0:
+        logger.info("No exchange list rows inserted")
+    inserted = write_corporate_actions_calendar(
+        engine=engine,
+        retrieval_date=calendar_retrieval,
+        earnings_payload=upcoming_earnings,
+        splits_payload=upcoming_splits,
+        dividends_payloads=dividend_payloads,
+    )
+    if inserted == 0:
+        logger.info("No corporate actions calendar rows inserted")
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
         logger.info("No tickers scheduled for update; skipping ticker processing")
     else:
-        logger.info("Starting pipeline for %d tickers", len(tickers_to_process))
+        logger.info("Starting download processing for %d tickers", len(tickers_to_process))
         logger.debug("Tickers scheduled for update: %s", tickers_to_process)
     provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
-        # Pull raw data, then build a clean historical model.
         retrieval_date = datetime.now(UTC)
         price_start = _price_start_date(engine, ticker, provider)
         if price_start is None:
@@ -404,14 +413,13 @@ def run_pipeline(results_dir: Path) -> None:
                     list(price_payload.keys()),
                 )
             save_price_payload(data_dir, ticker, price_payload)
-            if engine is not None:
-                write_prices(
-                    engine=engine,
-                    symbol=ticker,
-                    provider=provider,
-                    retrieval_date=retrieval_date,
-                    raw_data=price_payload,
-                )
+            write_prices(
+                engine=engine,
+                symbol=ticker,
+                provider=provider,
+                retrieval_date=retrieval_date,
+                raw_data=price_payload,
+            )
         else:
             logger.info("Skipping price persistence for %s due to fetch error", ticker)
         raw_data = fetch_data(ticker)
@@ -425,70 +433,102 @@ def run_pipeline(results_dir: Path) -> None:
             logger.info("Skipping %s due to missing Financials section", ticker)
             continue
         save_raw_payload(data_dir, ticker, raw_data)
-        filing_dates = _extract_filing_dates(raw_data)
-        logger.debug("Extracted %d filing dates for %s", len(filing_dates), ticker)
-        try:
-            historic_model = build_historic_model(raw_data)
-        except ValueError as exc:
-            logger.info("Skipping %s due to parsing error: %s", ticker, exc)
+        write_market_metrics(
+            engine=engine,
+            symbol=ticker,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+        write_earnings(
+            engine=engine,
+            symbol=ticker,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+        write_holders(
+            engine=engine,
+            symbol=ticker,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+        write_insider_transactions(
+            engine=engine,
+            symbol=ticker,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+        write_listings(
+            engine=engine,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+        write_reported_facts(
+            engine=engine,
+            symbol=ticker,
+            provider=provider,
+            retrieval_date=retrieval_date,
+            raw_data=raw_data,
+        )
+    logger.info("Download pipeline complete")
+    return tickers_to_process
+
+
+def run_forecast_pipeline(
+    results_dir: Path,
+    tickers: list[str],
+    engine: Engine | None = None,
+) -> None:
+    """Generate forecasts using database facts."""
+    logger.info("Starting forecast pipeline")
+    if engine is None:
+        engine = _init_engine(database_required=True)
+    if not tickers:
+        tickers = get_symbols_with_history(engine, provider="EODHD")
+        if tickers:
+            logger.info("Loaded %d tickers from database history", len(tickers))
+            logger.debug("Database tickers: %s", tickers)
+        else:
+            logger.info("No tickers found in the database for forecasting")
+            return
+    assumptions = Assumptions(growth_rates={}, margins={})
+    provider = "EODHD"
+    for ticker in tickers:
+        logger.info("Forecasting ticker: %s", ticker)
+        historic_model, filing_dates = load_historic_model_from_db(
+            engine=engine,
+            symbol=ticker,
+            provider=provider,
+            period_type="annual",
+        )
+        if not historic_model.history:
+            logger.info("No historical facts found for %s; skipping forecast", ticker)
             continue
-        # Add a forecast using placeholder assumptions.
+        logger.debug("Loaded %d historical periods for %s", len(historic_model.history), ticker)
         forecast_model = generate_forecast(historic_model, assumptions)
-        # Persist the result as JSON.
+        logger.debug("Generated %d forecast periods for %s", len(forecast_model.forecast), ticker)
         save_share_data(ticker, forecast_model)
-        # Write an Excel workbook for each share.
         report_path = results_dir / f"{ticker}.xlsx"
         export_model_to_excel(forecast_model, report_path)
         logger.info("Wrote report to %s", report_path)
-        # Persist to Postgres when configured.
-        if engine is not None:
-            write_market_metrics(
-                engine=engine,
-                symbol=ticker,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_earnings(
-                engine=engine,
-                symbol=ticker,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_holders(
-                engine=engine,
-                symbol=ticker,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_insider_transactions(
-                engine=engine,
-                symbol=ticker,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_listings(
-                engine=engine,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_reported_facts(
-                engine=engine,
-                symbol=ticker,
-                provider=provider,
-                retrieval_date=retrieval_date,
-                raw_data=raw_data,
-            )
-            write_financial_facts(
-                engine=engine,
-                symbol=ticker,
-                provider=provider,
-                retrieval_date=retrieval_date,
-                model=forecast_model,
-                filing_dates=filing_dates,
-                period_type="annual",
-                value_source="calculated",
-            )
-    logger.info("Pipeline complete")
+        forecast_only_model = FinancialModel(history=[], forecast=forecast_model.forecast)
+        write_financial_facts(
+            engine=engine,
+            symbol=ticker,
+            provider=provider,
+            retrieval_date=datetime.now(UTC),
+            model=forecast_only_model,
+            filing_dates=filing_dates,
+            period_type="annual",
+            value_source="calculated",
+        )
+    logger.info("Forecast pipeline complete")
+
+
+def run_pipeline(results_dir: Path, tickers: list[str]) -> None:
+    """Run download and forecast pipelines sequentially."""
+    engine = _init_engine(database_required=True)
+    run_download_pipeline(results_dir, tickers, engine=engine)
+    run_forecast_pipeline(results_dir, tickers, engine=engine)
 
 
 def _ensure_base_directories() -> tuple[Path, Path, bool, bool]:
@@ -703,4 +743,11 @@ if __name__ == "__main__":
     else:
         logger.info("Using existing results directory: %s", results_root)
     logger.info("Run output directory: %s", results_dir)
-    run_pipeline(results_dir)
+    args = _parse_args(sys.argv[1:])
+    tickers = _normalize_tickers(getattr(args, "tickers", []))
+    if args.command == "download":
+        run_download_pipeline(results_dir, tickers)
+    elif args.command == "forecast":
+        run_forecast_pipeline(results_dir, tickers)
+    else:
+        run_pipeline(results_dir, tickers)

@@ -1002,6 +1002,131 @@ def _normalize_exchange_code(entry: Mapping[str, object]) -> str | None:
     return None
 
 
+def get_symbols_with_history(
+    engine: Engine,
+    provider: str,
+    period_type: str = "annual",
+) -> list[str]:
+    """Return symbols that have reported financial facts in the database.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        provider (str): Provider name (e.g., "EODHD").
+        period_type (str): Period type label to filter on.
+
+    Returns:
+        list[str]: Distinct symbols with reported facts.
+    """
+    query = text(
+        """
+        SELECT DISTINCT symbol
+        FROM financial_facts
+        WHERE provider = :provider
+          AND period_type = :period_type
+          AND value_source = 'reported'
+          AND is_forecast = FALSE
+        ORDER BY symbol
+        """
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(query, {"provider": provider, "period_type": period_type}).fetchall()
+    return [row[0] for row in rows if isinstance(row[0], str)]
+
+
+def load_historic_model_from_db(
+    engine: Engine,
+    symbol: str,
+    provider: str,
+    period_type: str = "annual",
+) -> tuple[FinancialModel, dict[date, date]]:
+    """Load historical facts from the database into a FinancialModel.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        symbol (str): Ticker symbol to load.
+        provider (str): Provider name (e.g., "EODHD").
+        period_type (str): Period type label (e.g., "annual").
+
+    Returns:
+        tuple[FinancialModel, dict[date, date]]: Model plus filing-date map.
+    """
+    logger.info("Loading historical facts for %s from database", symbol)
+    query = text(
+        """
+        SELECT fiscal_date, filing_date, statement, line_item, value
+        FROM (
+            SELECT
+                fiscal_date,
+                filing_date,
+                statement,
+                line_item,
+                value,
+                ROW_NUMBER() OVER (
+                    PARTITION BY fiscal_date, statement, line_item
+                    ORDER BY retrieval_date DESC
+                ) AS rn
+            FROM financial_facts
+            WHERE symbol = :symbol
+              AND provider = :provider
+              AND period_type = :period_type
+              AND value_source = 'reported'
+              AND is_forecast = FALSE
+        ) latest
+        WHERE rn = 1
+        ORDER BY fiscal_date
+        """
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(
+            query,
+            {"symbol": symbol, "provider": provider, "period_type": period_type},
+        ).mappings().all()
+    if not rows:
+        logger.info("No reported facts found for %s", symbol)
+        return FinancialModel(history=[], forecast=[]), {}
+    items_by_date: dict[date, dict[str, dict[str, float | None]]] = {}
+    filing_dates: dict[date, date] = {}
+    for row in rows:
+        fiscal_date = row.get("fiscal_date")
+        if not isinstance(fiscal_date, date):
+            continue
+        statement = row.get("statement")
+        line_item = row.get("line_item")
+        value = _to_float(row.get("value"))
+        filing_date = _parse_date(row.get("filing_date"))
+        if fiscal_date not in items_by_date:
+            items_by_date[fiscal_date] = {
+                "income": {},
+                "balance": {},
+                "cash_flow": {},
+            }
+        if filing_date is not None:
+            existing = filing_dates.get(fiscal_date)
+            if existing is None or filing_date > existing:
+                filing_dates[fiscal_date] = filing_date
+        if statement == "multi_statement" and line_item == "shares":
+            income = items_by_date[fiscal_date]["income"]
+            if "shares_diluted" not in income and value is not None:
+                income["shares_diluted"] = value
+            continue
+        if statement not in items_by_date[fiscal_date]:
+            logger.debug("Skipping unsupported statement %s for %s", statement, symbol)
+            continue
+        if isinstance(line_item, str):
+            items_by_date[fiscal_date][statement][line_item] = value
+    history = [
+        LineItems(
+            period=period,
+            income=items_by_date[period]["income"],
+            balance=items_by_date[period]["balance"],
+            cash_flow=items_by_date[period]["cash_flow"],
+        )
+        for period in sorted(items_by_date)
+    ]
+    logger.info("Loaded %d historical periods for %s", len(history), symbol)
+    return FinancialModel(history=history, forecast=[]), filing_dates
+
+
 def _normalize_exchange_value(value: object) -> object | None:
     """Normalize exchange list values into safe scalar values."""
     if value is None:

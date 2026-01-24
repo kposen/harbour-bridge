@@ -1,7 +1,6 @@
 [database]
 float_rel_tol = 1e-4
 float_abs_tol = 1e-6
-require_db = false
 
 [calendar]
 lookahead_days = 3
