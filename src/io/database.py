@@ -79,6 +79,108 @@ EXCHANGE_LIST_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "country_iso2": ("CountryISO2", "country_iso2", "countryISO2"),
     "country_iso3": ("CountryISO3", "country_iso3", "countryISO3"),
 }
+MARKET_METRIC_TYPES: dict[str, str] = {
+    "200DayMA": "float",
+    "50DayMA": "float",
+    "52WeekHigh": "float",
+    "52WeekLow": "float",
+    "Address": "text",
+    "Beta": "float",
+    "BookValue": "float",
+    "Buy": "float",
+    "CIK": "text",
+    "CUSIP": "text",
+    "City": "text",
+    "Code": "text",
+    "Country": "text",
+    "CountryISO": "text",
+    "CountryName": "text",
+    "CurrencyCode": "text",
+    "CurrencyName": "text",
+    "CurrencySymbol": "text",
+    "Description": "text",
+    "DilutedEpsTTM": "float",
+    "DividendDate": "date",
+    "DividendShare": "float",
+    "DividendYield": "float",
+    "EBITDA": "float",
+    "EPSEstimateCurrentQuarter": "float",
+    "EPSEstimateCurrentYear": "float",
+    "EPSEstimateNextQuarter": "float",
+    "EPSEstimateNextYear": "float",
+    "EarningsShare": "float",
+    "EmployerIdNumber": "text",
+    "EnterpriseValue": "float",
+    "EnterpriseValueEbitda": "float",
+    "EnterpriseValueRevenue": "float",
+    "ExDividendDate": "date",
+    "Exchange": "text",
+    "FiscalYearEnd": "text",
+    "ForwardAnnualDividendRate": "float",
+    "ForwardAnnualDividendYield": "float",
+    "ForwardPE": "float",
+    "FullTimeEmployees": "float",
+    "GicGroup": "text",
+    "GicIndustry": "text",
+    "GicSector": "text",
+    "GicSubIndustry": "text",
+    "GrossProfitTTM": "float",
+    "Hold": "float",
+    "HomeCategory": "text",
+    "IPODate": "date",
+    "ISIN": "text",
+    "Industry": "text",
+    "InternationalDomestic": "text",
+    "IsDelisted": "float",
+    "LEI": "text",
+    "LastSplitDate": "date",
+    "LastSplitFactor": "text",
+    "LogoURL": "text",
+    "MarketCapitalization": "float",
+    "MarketCapitalizationMln": "float",
+    "MostRecentQuarter": "date",
+    "Name": "text",
+    "OpenFigi": "text",
+    "OperatingMarginTTM": "float",
+    "PEGRatio": "float",
+    "PERatio": "float",
+    "PayoutRatio": "float",
+    "PercentInsiders": "float",
+    "PercentInstitutions": "float",
+    "Phone": "text",
+    "PriceBookMRQ": "float",
+    "PriceSalesTTM": "float",
+    "PrimaryTicker": "text",
+    "ProfitMargin": "float",
+    "QuarterlyEarningsGrowthYOY": "float",
+    "QuarterlyRevenueGrowthYOY": "float",
+    "Rating": "float",
+    "ReturnOnAssetsTTM": "float",
+    "ReturnOnEquityTTM": "float",
+    "RevenuePerShareTTM": "float",
+    "RevenueTTM": "float",
+    "Sector": "text",
+    "Sell": "float",
+    "SharesFloat": "float",
+    "SharesOutstanding": "float",
+    "SharesShort": "float",
+    "SharesShortPriorMonth": "float",
+    "ShortPercent": "float",
+    "ShortPercentFloat": "float",
+    "ShortRatio": "float",
+    "State": "text",
+    "Street": "text",
+    "StrongBuy": "float",
+    "StrongSell": "float",
+    "TargetPrice": "float",
+    "TrailingPE": "float",
+    "Type": "text",
+    "UpdatedAt": "date",
+    "WallStreetTargetPrice": "float",
+    "WebURL": "text",
+    "ZIP": "text",
+}
+MARKET_METRIC_COLUMNS = tuple(MARKET_METRIC_TYPES.keys())
 
 
 def get_engine(database_url: str) -> Engine:
@@ -254,7 +356,8 @@ def ensure_schema(engine: Engine) -> None:
 
 def _postgres_schema_sql() -> str:
     """Return Postgres DDL for application tables."""
-    return """
+    market_columns_sql = _market_metric_columns_sql()
+    return f"""
     CREATE TABLE IF NOT EXISTS financial_facts (
         symbol TEXT NOT NULL,
         fiscal_date DATE NOT NULL,
@@ -285,12 +388,8 @@ def _postgres_schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS market_metrics (
         symbol TEXT NOT NULL,
         retrieval_date TIMESTAMPTZ NOT NULL,
-        section TEXT NOT NULL,
-        metric TEXT NOT NULL,
-        value_float DOUBLE PRECISION NULL,
-        value_text TEXT NULL,
-        value_type TEXT NOT NULL,
-        PRIMARY KEY (symbol, retrieval_date, section, metric)
+{market_columns_sql},
+        PRIMARY KEY (symbol, retrieval_date)
     );
     CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
         ON market_metrics (symbol, retrieval_date);
@@ -420,6 +519,22 @@ def _postgres_schema_sql() -> str:
     """
 
 
+def _market_metric_columns_sql() -> str:
+    """Build SQL column definitions for market metrics."""
+    def column_sql(metric: str) -> str:
+        """Build SQL for a single market metrics column."""
+        metric_type = MARKET_METRIC_TYPES.get(metric, "text")
+        if metric_type == "float":
+            sql_type = "DOUBLE PRECISION"
+        elif metric_type == "date":
+            sql_type = "DATE"
+        else:
+            sql_type = "TEXT"
+        return f'        "{metric}" {sql_type} NULL'
+
+    return ",\n".join(column_sql(metric) for metric in MARKET_METRIC_COLUMNS)
+
+
 
 
 def write_market_metrics(
@@ -439,32 +554,23 @@ def write_market_metrics(
     Returns:
         int: Number of inserted rows.
     """
-    rows = list(_iter_market_metrics(symbol, retrieval_date, raw_data))
-    if not rows:
+    row = _market_metrics_row(symbol, retrieval_date, raw_data)
+    if row is None:
         return 0
+    columns = ["symbol", "retrieval_date", *MARKET_METRIC_COLUMNS]
+    param_map = {column: _metric_param_name(column) for column in columns}
     insert_sql = text(
-        """
+        f"""
         INSERT INTO market_metrics (
-            symbol,
-            retrieval_date,
-            section,
-            metric,
-            value_float,
-            value_text,
-            value_type
+            {", ".join(_quote_identifier(column) for column in columns)}
         )
         VALUES (
-            :symbol,
-            :retrieval_date,
-            :section,
-            :metric,
-            :value_float,
-            :value_text,
-            :value_type
+            {", ".join(f":{param_map[column]}" for column in columns)}
         )
         """
     )
-    match_columns = ("symbol", "section", "metric")
+    rows = [row]
+    match_columns = ("symbol",)
     with engine.begin() as conn:
         rows_to_insert = _filter_versioned_rows(
             conn=conn,
@@ -474,8 +580,12 @@ def write_market_metrics(
         )
         if not rows_to_insert:
             return 0
-        logger.info("Writing %d market metrics for %s", len(rows_to_insert), symbol)
-        conn.execute(insert_sql, rows_to_insert)
+        param_rows = [
+            {param_map[column]: row.get(column) for column in columns}
+            for row in rows_to_insert
+        ]
+        logger.info("Writing %d market metrics rows for %s", len(param_rows), symbol)
+        conn.execute(insert_sql, param_rows)
     return len(rows_to_insert)
 
 
@@ -1887,21 +1997,60 @@ def _iter_listings_rows(
     ]
 
 
-def _iter_market_metrics(
+def _market_metrics_row(
     symbol: str,
     retrieval_date: datetime,
     raw_data: Mapping[str, object],
-) -> Iterable[dict[str, object]]:
-    """Yield market metric rows from supported payload sections.
+) -> dict[str, object] | None:
+    """Build a wide market metrics row from supported payload sections."""
+    entries = _market_metric_entries(raw_data)
+    if not entries:
+        logger.debug("Market metrics payload contained no usable entries")
+        return None
+    metrics: dict[str, tuple[object, str]] = {}
+    collisions: list[dict[str, str]] = []
+    for metric, raw_value, section in entries:
+        if metric in metrics:
+            existing_value, existing_section = metrics[metric]
+            if existing_value is not None and raw_value is not None:
+                collisions.append(
+                    {
+                        "metric": metric,
+                        "kept_section": existing_section,
+                        "dropped_section": section,
+                    }
+                )
+                continue
+            if raw_value is None:
+                continue
+        metrics[metric] = (raw_value, section)
+    if collisions:
+        logger.debug(
+            "Market metrics collisions (sample): %s",
+            collisions[:25],
+        )
+    unknown_metrics = [
+        metric for metric in metrics.keys() if metric not in MARKET_METRIC_TYPES
+    ]
+    if unknown_metrics:
+        logger.debug(
+            "Market metrics columns missing from schema (sample): %s",
+            sorted(unknown_metrics)[:25],
+        )
+    row = {
+        "symbol": symbol,
+        "retrieval_date": retrieval_date,
+        **{metric: None for metric in MARKET_METRIC_COLUMNS},
+    }
+    for metric, (raw_value, _) in metrics.items():
+        if metric not in MARKET_METRIC_TYPES:
+            continue
+        row[metric] = _market_metric_value(metric, raw_value)
+    return row
 
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): When the payload was retrieved.
-        raw_data (Mapping[str, object]): Raw provider payload.
 
-    Returns:
-        Iterable[dict[str, object]]: Row dictionaries for insertion.
-    """
+def _market_metric_entries(raw_data: Mapping[str, object]) -> list[tuple[str, object, str]]:
+    """Collect market metrics entries from supported payload sections."""
     sections = (
         "General",
         "Highlights",
@@ -1912,18 +2061,66 @@ def _iter_market_metrics(
         "AnalystRatings",
         "SplitsDividends",
     )
-    def section_rows(section: str) -> Iterable[dict[str, object]]:
-        """Build metric rows for a section.
 
-        Args:
-            section (str): Section name to parse.
+    def section_entries(section: str) -> Iterable[tuple[str, object, str]]:
+        """Build metric entries for a section."""
+        data = raw_data.get(section)
+        if not isinstance(data, Mapping):
+            return []
+        metrics = {
+            str(metric): raw_value
+            for metric, raw_value in data.items()
+            if not isinstance(raw_value, (dict, list))
+        }
+        if section == "General":
+            address_data = data.get("AddressData")
+            if isinstance(address_data, Mapping):
+                collisions = [str(key) for key in address_data.keys() if str(key) in metrics]
+                for key_name in collisions:
+                    logger.info(
+                        "General.AddressData metric '%s' collides with General field '%s'",
+                        key_name,
+                        key_name,
+                    )
+                metrics = {
+                    **metrics,
+                    **{str(key): value for key, value in address_data.items()},
+                }
+        return [
+            (metric, raw_value, section)
+            for metric, raw_value in metrics.items()
+        ]
 
-        Returns:
-            Iterable[dict[str, object]]: Row dictionaries for insertion.
-        """
-        return _market_section_rows(symbol, retrieval_date, section, raw_data.get(section))
+    return list(mapcat(section_entries, sections))
 
-    return mapcat(section_rows, sections)
+
+def _market_metric_value(metric: str, raw_value: object) -> object | None:
+    """Coerce a market metric value to the schema-defined type."""
+    metric_type = MARKET_METRIC_TYPES.get(metric, "text")
+    if metric_type == "float":
+        return _to_float(raw_value)
+    if metric_type == "date":
+        return _parse_date(raw_value)
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        return stripped if stripped else None
+    return str(raw_value)
+
+
+def _metric_param_name(column: str) -> str:
+    """Build a safe parameter name for SQL binds."""
+    safe = "".join(char if char.isalnum() else "_" for char in column)
+    if not safe or safe[0].isdigit():
+        safe = f"m_{safe}"
+    return f"p_{safe}"
+
+
+def _quote_identifier(identifier: str) -> str:
+    """Quote an SQL identifier."""
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
 
 
 def _iter_price_rows(
@@ -1978,58 +2175,6 @@ def _price_entries(raw_data: object) -> Iterable[Mapping[str, object]]:
     if isinstance(raw_data, Mapping):
         return raw_data.values()
     return []
-
-
-def _market_section_rows(
-    symbol: str,
-    retrieval_date: datetime,
-    section: str,
-    data: object,
-) -> list[dict[str, object]]:
-    """Build metric rows for a single payload section.
-
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): Retrieval timestamp.
-        section (str): Payload section name.
-        data (object): Raw section payload.
-
-    Returns:
-        list[dict[str, object]]: Row dictionaries for insertion.
-    """
-    if not isinstance(data, Mapping):
-        return []
-    metrics = {
-        str(metric): raw_value
-        for metric, raw_value in data.items()
-        if not isinstance(raw_value, (dict, list))
-    }
-    if section == "General":
-        address_data = data.get("AddressData")
-        if isinstance(address_data, Mapping):
-            collisions = [str(key) for key in address_data.keys() if str(key) in metrics]
-            for key_name in collisions:
-                logger.info(
-                    "General.AddressData metric '%s' collides with General field '%s'",
-                    key_name,
-                    key_name,
-                )
-            metrics = {
-                **metrics,
-                **{str(key): value for key, value in address_data.items()},
-            }
-    base = {
-        "symbol": symbol,
-        "retrieval_date": retrieval_date,
-        "section": section,
-    }
-    rows = [
-        row
-        for metric, raw_value in metrics.items()
-        for row in [_typed_metric_row({**base, "metric": metric}, raw_value)]
-        if row is not None
-    ]
-    return rows
 
 
 def write_financial_facts(
