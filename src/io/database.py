@@ -189,7 +189,7 @@ def get_exchange_codes(engine: Engine) -> list[str]:
         code
         for item in annotated
         for code in [item["code"]]
-        if code is not None and not item["missing_fields"]
+        if code is not None and (not item["missing_fields"] or code == "FOREX")
     ]
     invalid = [
         {
@@ -197,15 +197,23 @@ def get_exchange_codes(engine: Engine) -> list[str]:
             "missing_fields": item["missing_fields"],
         }
         for item in annotated
-        if item["code"] is None or item["missing_fields"]
+        if item["code"] is None
+        or (item["missing_fields"] and item["code"] != "FOREX")
     ]
     missing_code_count = sum(1 for item in annotated if item["code"] is None)
+    forex_override = sum(
+        1
+        for item in annotated
+        if item["code"] == "FOREX" and item["missing_fields"]
+    )
     logger.info(
         "Exchange list filter: total=%d eligible=%d skipped=%d",
         len(rows),
         len(valid_codes),
         len(invalid),
     )
+    if forex_override:
+        logger.info("Exchange list filter override: kept FOREX with missing fields")
     if missing_code_count:
         logger.debug("Skipped %d exchanges with missing codes", missing_code_count)
     if invalid:
