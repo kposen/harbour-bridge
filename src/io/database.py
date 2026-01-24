@@ -50,8 +50,9 @@ PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
 
 RETRIEVAL_COLUMN = "retrieval_date"
 SCRATCH_TABLE = "pipeline_scratch"
-EXCHANGE_LIST_TABLE = "exchange_list"
-SHARE_UNIVERSE_TABLE = "share_universe"
+EXCHANGES_TABLE = "exchanges"
+PRIMARY_LISTING_MAP_TABLE = "primary_listing_map"
+UNIVERSE_TABLE = "universe"
 EXCHANGE_LIST_COLUMNS = (
     "name",
     "operating_mic",
@@ -164,10 +165,10 @@ def get_exchange_codes(engine: Engine) -> list[str]:
         SELECT
             code,
             {", ".join(EXCHANGE_LIST_COLUMNS)}
-        FROM {EXCHANGE_LIST_TABLE}
+        FROM {EXCHANGES_TABLE}
         WHERE (code, {RETRIEVAL_COLUMN}) IN (
             SELECT code, MAX({RETRIEVAL_COLUMN})
-            FROM {EXCHANGE_LIST_TABLE}
+            FROM {EXCHANGES_TABLE}
             GROUP BY code
         )
         ORDER BY code
@@ -176,7 +177,7 @@ def get_exchange_codes(engine: Engine) -> list[str]:
     with engine.begin() as conn:
         rows = conn.execute(query).mappings().all()
     if not rows:
-        logger.info("No exchange list rows available for share universe refresh")
+        logger.info("No exchanges rows available for share universe refresh")
         return []
     annotated = [
         {
@@ -207,13 +208,13 @@ def get_exchange_codes(engine: Engine) -> list[str]:
         if item["code"] == "FOREX" and item["missing_fields"]
     )
     logger.info(
-        "Exchange list filter: total=%d eligible=%d skipped=%d",
+        "Exchanges filter: total=%d eligible=%d skipped=%d",
         len(rows),
         len(valid_codes),
         len(invalid),
     )
     if forex_override:
-        logger.info("Exchange list filter override: kept FOREX with missing fields")
+        logger.info("Exchanges filter override: kept FOREX with missing fields")
     if missing_code_count:
         logger.debug("Skipped %d exchanges with missing codes", missing_code_count)
     if invalid:
@@ -337,7 +338,7 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
         ON insider_transactions (symbol, date);
-    CREATE TABLE IF NOT EXISTS listings (
+    CREATE TABLE IF NOT EXISTS primary_listing_map (
         code TEXT NOT NULL,
         exchange TEXT NOT NULL,
         retrieval_date TIMESTAMPTZ NOT NULL,
@@ -345,8 +346,8 @@ def _postgres_schema_sql() -> str:
         name TEXT NULL,
         PRIMARY KEY (code, exchange, retrieval_date)
     );
-    CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
-        ON listings (primary_ticker, retrieval_date);
+    CREATE INDEX IF NOT EXISTS IX_primary_listing_map_primary_ticker
+        ON primary_listing_map (primary_ticker, retrieval_date);
     CREATE TABLE IF NOT EXISTS prices (
         symbol TEXT NOT NULL,
         date DATE NOT NULL,
@@ -362,7 +363,7 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
         ON prices (symbol, date);
-    CREATE TABLE IF NOT EXISTS exchange_list (
+    CREATE TABLE IF NOT EXISTS exchanges (
         retrieval_date TIMESTAMPTZ NOT NULL,
         code TEXT NOT NULL,
         name TEXT NULL,
@@ -373,9 +374,9 @@ def _postgres_schema_sql() -> str:
         country_iso3 TEXT NULL,
         PRIMARY KEY (retrieval_date, code)
     );
-    CREATE INDEX IF NOT EXISTS IX_exchange_list_code
-        ON exchange_list (code);
-    CREATE TABLE IF NOT EXISTS share_universe (
+    CREATE INDEX IF NOT EXISTS IX_exchanges_code
+        ON exchanges (code);
+    CREATE TABLE IF NOT EXISTS universe (
         symbol TEXT NOT NULL,
         code TEXT NOT NULL,
         name TEXT NULL,
@@ -387,8 +388,8 @@ def _postgres_schema_sql() -> str:
         retrieval_date TIMESTAMPTZ NOT NULL,
         PRIMARY KEY (symbol, exchange, retrieval_date)
     );
-    CREATE INDEX IF NOT EXISTS IX_share_universe_symbol
-        ON share_universe (symbol, exchange);
+    CREATE INDEX IF NOT EXISTS IX_universe_symbol
+        ON universe (symbol, exchange);
     CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
         symbol TEXT NOT NULL,
         date_retrieved TIMESTAMPTZ NOT NULL,
@@ -735,7 +736,7 @@ def write_listings(
     retrieval_date: datetime,
     raw_data: Mapping[str, object],
 ) -> int:
-    """Write listing relationships from General.Listings to the listings table.
+    """Write listing relationships from General.Listings to the primary_listing_map table.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.
@@ -749,8 +750,8 @@ def write_listings(
     if not rows:
         return 0
     insert_sql = text(
-        """
-        INSERT INTO listings (
+        f"""
+        INSERT INTO {PRIMARY_LISTING_MAP_TABLE} (
             code,
             exchange,
             retrieval_date,
@@ -770,7 +771,7 @@ def write_listings(
     with engine.begin() as conn:
         rows_to_insert = _filter_versioned_rows(
             conn=conn,
-            table="listings",
+            table=PRIMARY_LISTING_MAP_TABLE,
             rows=rows,
             match_columns=match_columns,
         )
@@ -786,7 +787,7 @@ def write_exchange_list(
     retrieval_date: datetime,
     payload: object | None,
 ) -> int:
-    """Write exchange list rows to the exchange_list table.
+    """Write exchange list rows to the exchanges table.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.
@@ -804,7 +805,7 @@ def write_exchange_list(
     columns = ["code", RETRIEVAL_COLUMN, *EXCHANGE_LIST_COLUMNS]
     insert_sql = text(
         f"""
-        INSERT INTO {EXCHANGE_LIST_TABLE} (
+        INSERT INTO {EXCHANGES_TABLE} (
             {", ".join(columns)}
         )
         VALUES (
@@ -816,7 +817,7 @@ def write_exchange_list(
         rows = [{column: row.get(column) for column in columns} for row in rows]
         rows_to_insert = _filter_versioned_rows(
             conn=conn,
-            table=EXCHANGE_LIST_TABLE,
+            table=EXCHANGES_TABLE,
             rows=rows,
             match_columns=("code",),
             retrieval_column=RETRIEVAL_COLUMN,
@@ -839,7 +840,7 @@ def write_share_universe(
     retrieval_date: datetime,
     payload: object | None,
 ) -> int:
-    """Write share universe rows to the share_universe table.
+    """Write share universe rows to the universe table.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.
@@ -857,7 +858,7 @@ def write_share_universe(
     columns = [*SHARE_UNIVERSE_COLUMNS, RETRIEVAL_COLUMN]
     insert_sql = text(
         f"""
-        INSERT INTO {SHARE_UNIVERSE_TABLE} (
+        INSERT INTO {UNIVERSE_TABLE} (
             {", ".join(columns)}
         )
         VALUES (
@@ -869,7 +870,7 @@ def write_share_universe(
         rows = [{column: row.get(column) for column in columns} for row in rows]
         rows_to_insert = _filter_versioned_rows(
             conn=conn,
-            table=SHARE_UNIVERSE_TABLE,
+            table=UNIVERSE_TABLE,
             rows=rows,
             match_columns=("symbol", "exchange"),
             retrieval_column=RETRIEVAL_COLUMN,

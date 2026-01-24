@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS insider_transactions (
 CREATE INDEX IF NOT EXISTS IX_insider_transactions_symbol_date
     ON insider_transactions (symbol, date);
 
-CREATE TABLE IF NOT EXISTS listings (
+CREATE TABLE IF NOT EXISTS primary_listing_map (
     code TEXT NOT NULL,
     exchange TEXT NOT NULL,
     retrieval_date TIMESTAMPTZ NOT NULL,
@@ -102,8 +102,8 @@ CREATE TABLE IF NOT EXISTS listings (
     PRIMARY KEY (code, exchange, retrieval_date)
 );
 
-CREATE INDEX IF NOT EXISTS IX_listings_primary_ticker
-    ON listings (primary_ticker, retrieval_date);
+CREATE INDEX IF NOT EXISTS IX_primary_listing_map_primary_ticker
+    ON primary_listing_map (primary_ticker, retrieval_date);
 
 CREATE TABLE IF NOT EXISTS prices (
     symbol TEXT NOT NULL,
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE INDEX IF NOT EXISTS IX_prices_symbol_date
     ON prices (symbol, date);
 
-CREATE TABLE IF NOT EXISTS exchange_list (
+CREATE TABLE IF NOT EXISTS exchanges (
     retrieval_date TIMESTAMPTZ NOT NULL,
     code TEXT NOT NULL,
     name TEXT NULL,
@@ -134,10 +134,10 @@ CREATE TABLE IF NOT EXISTS exchange_list (
     PRIMARY KEY (retrieval_date, code)
 );
 
-CREATE INDEX IF NOT EXISTS IX_exchange_list_code
-    ON exchange_list (code);
+CREATE INDEX IF NOT EXISTS IX_exchanges_code
+    ON exchanges (code);
 
-CREATE TABLE IF NOT EXISTS share_universe (
+CREATE TABLE IF NOT EXISTS universe (
     symbol TEXT NOT NULL,
     code TEXT NOT NULL,
     name TEXT NULL,
@@ -150,8 +150,8 @@ CREATE TABLE IF NOT EXISTS share_universe (
     PRIMARY KEY (symbol, exchange, retrieval_date)
 );
 
-CREATE INDEX IF NOT EXISTS IX_share_universe_symbol
-    ON share_universe (symbol, exchange);
+CREATE INDEX IF NOT EXISTS IX_universe_symbol
+    ON universe (symbol, exchange);
 
 CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
     symbol TEXT NOT NULL,

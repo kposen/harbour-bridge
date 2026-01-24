@@ -78,7 +78,7 @@ retrieval_date, and provider for versioned price history.
 The `download` and `forecast` commands run preflight checks before accessing
 Postgres. This validates connectivity and performs a write/read/delete round-trip
 against a scratch table named `pipeline_scratch`. Failures abort the run.
-The exchange list is stored in `exchange_list` with explicit columns for
+The exchange list is stored in `exchanges` with explicit columns for
 `name`, `operating_mic`, `country`, `currency`, `country_iso2`, and
 `country_iso3`.
 
