@@ -689,7 +689,9 @@ def write_exchange_list(
     """
     rows = _exchange_rows(retrieval_date, payload)
     if not rows:
+        logger.debug("No exchange list rows parsed from payload")
         return 0
+    logger.debug("Prepared %d exchange list rows for insertion", len(rows))
     columns = ["code", RETRIEVAL_COLUMN, *EXCHANGE_LIST_COLUMNS]
     insert_sql = text(
         f"""
@@ -710,7 +712,13 @@ def write_exchange_list(
             match_columns=("code",),
             retrieval_column=RETRIEVAL_COLUMN,
         )
+        logger.debug(
+            "Exchange list rows: %d candidate, %d new after dedup",
+            len(rows),
+            len(rows_to_insert),
+        )
         if not rows_to_insert:
+            logger.debug("No new exchange list rows to insert after deduplication")
             return 0
         logger.info("Writing %d exchange list rows", len(rows_to_insert))
         conn.execute(insert_sql, rows_to_insert)
@@ -814,7 +822,14 @@ def write_corporate_actions_calendar(
         for payload in dividends_payloads
         for row in _iter_dividend_calendar_rows(retrieval_date, payload)
     ]
+    logger.debug(
+        "Prepared corporate actions rows: earnings=%d splits=%d dividends=%d",
+        len(earnings_rows),
+        len(splits_rows),
+        len(dividends_rows),
+    )
     if not earnings_rows and not splits_rows and not dividends_rows:
+        logger.debug("No corporate actions calendar rows parsed from payloads")
         return 0
     insert_sql = text(
         """
@@ -876,10 +891,17 @@ def write_corporate_actions_calendar(
                 match_columns=("symbol", "earnings_report_date"),
                 retrieval_column="date_retrieved",
             )
+            logger.debug(
+                "Earnings calendar rows: %d candidate, %d new after dedup",
+                len(earnings_rows),
+                len(rows_to_insert),
+            )
             if rows_to_insert:
                 logger.info("Writing %d upcoming earnings calendar rows", len(rows_to_insert))
                 conn.execute(insert_sql, rows_to_insert)
                 inserted += len(rows_to_insert)
+            else:
+                logger.debug("No new earnings calendar rows after deduplication")
         if splits_rows:
             rows_to_insert = _filter_versioned_rows(
                 conn=conn,
@@ -888,10 +910,17 @@ def write_corporate_actions_calendar(
                 match_columns=("symbol", "split_date"),
                 retrieval_column="date_retrieved",
             )
+            logger.debug(
+                "Splits calendar rows: %d candidate, %d new after dedup",
+                len(splits_rows),
+                len(rows_to_insert),
+            )
             if rows_to_insert:
                 logger.info("Writing %d upcoming splits calendar rows", len(rows_to_insert))
                 conn.execute(insert_sql, rows_to_insert)
                 inserted += len(rows_to_insert)
+            else:
+                logger.debug("No new splits calendar rows after deduplication")
         if dividends_rows:
             rows_to_insert = _filter_versioned_rows(
                 conn=conn,
@@ -900,10 +929,17 @@ def write_corporate_actions_calendar(
                 match_columns=("symbol", "dividend_date"),
                 retrieval_column="date_retrieved",
             )
+            logger.debug(
+                "Dividends calendar rows: %d candidate, %d new after dedup",
+                len(dividends_rows),
+                len(rows_to_insert),
+            )
             if rows_to_insert:
                 logger.info("Writing %d upcoming dividends calendar rows", len(rows_to_insert))
                 conn.execute(insert_sql, rows_to_insert)
                 inserted += len(rows_to_insert)
+            else:
+                logger.debug("No new dividends calendar rows after deduplication")
     return inserted
 
 
@@ -924,6 +960,7 @@ def _exchange_rows(
         return []
     entries = _exchange_entries(payload)
     if not entries:
+        logger.debug("Exchange list payload contained no usable entries")
         return []
     rows: list[dict[str, object]] = []
     for entry in entries:
@@ -937,6 +974,7 @@ def _exchange_rows(
         for column, keys in EXCHANGE_LIST_FIELD_MAP.items():
             row[column] = _normalize_exchange_value(_first_present(entry, keys))
         rows.append(row)
+    logger.debug("Parsed %d exchange list entries into %d rows", len(entries), len(rows))
     return rows
 
 

@@ -307,6 +307,7 @@ def run_pipeline(results_dir: Path) -> None:
     calendar_retrieval = datetime.now(UTC)
     calendar_start = calendar_retrieval.date()
     calendar_lookahead = get_calendar_lookahead_days()
+    logger.debug("Calendar look-ahead requested: %d days", calendar_lookahead)
     if calendar_lookahead > 30:
         logger.warning(
             "Calendar look-ahead of %d days exceeds max 30; using 30",
@@ -314,6 +315,12 @@ def run_pipeline(results_dir: Path) -> None:
         )
         calendar_lookahead = 30
     calendar_end = calendar_start + timedelta(days=calendar_lookahead - 1)
+    logger.debug(
+        "Calendar window resolved to start=%s end=%s days=%d",
+        calendar_start,
+        calendar_end,
+        calendar_lookahead,
+    )
     exchange_payload = fetch_exchange_list()
     if exchange_payload is not None:
         save_exchanges_list_payload(data_dir, exchange_payload)
@@ -330,14 +337,26 @@ def run_pipeline(results_dir: Path) -> None:
     else:
         logger.info("Skipping upcoming splits payload save due to fetch error")
     dividend_payloads: list[object] = []
+    dividend_nonempty_days = 0
+    dividend_total_entries = 0
     for offset in range(calendar_lookahead):
         payload_date = calendar_start + timedelta(days=offset)
         dividend_payload = fetch_upcoming_dividends(payload_date)
         if dividend_payload is not None:
             save_upcoming_dividends_payload(data_dir, payload_date, dividend_payload)
             dividend_payloads.append(dividend_payload)
+            if isinstance(dividend_payload, list):
+                if dividend_payload:
+                    dividend_nonempty_days += 1
+                dividend_total_entries += len(dividend_payload)
         else:
             logger.info("Skipping upcoming dividends payload save for %s due to fetch error", payload_date)
+    logger.debug(
+        "Dividend payload summary: days=%d nonempty_days=%d total_entries=%d",
+        calendar_lookahead,
+        dividend_nonempty_days,
+        dividend_total_entries,
+    )
     if engine is not None:
         exchange_inserted = write_exchange_list(
             engine=engine,

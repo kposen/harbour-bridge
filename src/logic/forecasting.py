@@ -534,7 +534,7 @@ def _series(history: list[LineItems], section: str, key: str) -> list[float | No
     getter = SECTION_GETTERS.get(section)
     if getter is None:
         return []
-    return list(pipe(history, cmap(getter), cmap(get(key))))
+    return list(pipe(history, cmap(getter), cmap(lambda values: values.get(key))))
 
 
 def _average_growth(values: list[float | None]) -> float | None:

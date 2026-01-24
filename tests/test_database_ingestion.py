@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 
 import main
 from src.io.database import _iter_reported_rows, ensure_schema, get_latest_filing_date
+from src.logic.historic_builder import EODHD_FIELD_MAP
 
 
 def _get_engine() -> Engine:
@@ -157,6 +158,7 @@ def test_reported_facts_ingestion_net_income_cfs() -> None:
             provider="EODHD",
             retrieval_date=datetime(2025, 3, 1, tzinfo=UTC),
             raw_data=raw_data,
+            field_map=EODHD_FIELD_MAP,
         )
     )
     cfs_net_income = next(
