@@ -137,21 +137,6 @@ CREATE TABLE IF NOT EXISTS market_metrics (
 CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
     ON market_metrics (symbol, retrieval_date);
 
-CREATE TABLE IF NOT EXISTS earnings (
-    symbol TEXT NOT NULL,
-    date DATE NOT NULL,
-    period_type TEXT NOT NULL,
-    field TEXT NOT NULL,
-    retrieval_date TIMESTAMPTZ NOT NULL,
-    value_float DOUBLE PRECISION NULL,
-    value_text TEXT NULL,
-    value_type TEXT NOT NULL,
-    PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
-);
-
-CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
-    ON earnings (symbol, date);
-
 CREATE TABLE IF NOT EXISTS holders (
     symbol TEXT NOT NULL,
     date DATE NOT NULL,
@@ -247,32 +232,39 @@ CREATE TABLE IF NOT EXISTS universe (
 CREATE INDEX IF NOT EXISTS IX_universe_symbol
     ON universe (symbol, exchange);
 
-CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
+CREATE TABLE IF NOT EXISTS earnings (
     symbol TEXT NOT NULL,
-    date_retrieved TIMESTAMPTZ NOT NULL,
-    earnings_report_date DATE NULL,
-    earnings_fiscal_date DATE NULL,
-    earnings_before_after_market TEXT NULL,
-    earnings_currency TEXT NULL,
-    earnings_actual DOUBLE PRECISION NULL,
-    earnings_estimate DOUBLE PRECISION NULL,
-    earnings_difference DOUBLE PRECISION NULL,
-    earnings_percent DOUBLE PRECISION NULL,
-    dividend_date DATE NULL,
-    dividend_currency TEXT NULL,
-    dividend_amount DOUBLE PRECISION NULL,
-    dividend_period TEXT NULL,
-    dividend_declaration_date DATE NULL,
-    dividend_record_date DATE NULL,
-    dividend_payment_date DATE NULL,
-    split_date DATE NULL,
-    split_optionable BOOLEAN NULL,
-    split_old_shares DOUBLE PRECISION NULL,
-    split_new_shares DOUBLE PRECISION NULL
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    date DATE NOT NULL,
+    fiscal_date DATE NULL,
+    before_after_market TEXT NULL,
+    currency TEXT NULL,
+    actual DOUBLE PRECISION NULL,
+    estimate DOUBLE PRECISION NULL,
+    difference DOUBLE PRECISION NULL,
+    percent DOUBLE PRECISION NULL,
+    PRIMARY KEY (symbol, date, retrieval_date)
 );
 
-CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_earnings
-    ON corporate_actions_calendar (symbol, earnings_report_date);
+CREATE TABLE IF NOT EXISTS dividends (
+    symbol TEXT NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    date DATE NOT NULL,
+    currency TEXT NULL,
+    amount DOUBLE PRECISION NULL,
+    period TEXT NULL,
+    declaration_date DATE NULL,
+    record_date DATE NULL,
+    payment_date DATE NULL,
+    PRIMARY KEY (symbol, date, retrieval_date)
+);
 
-CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_split
-    ON corporate_actions_calendar (symbol, split_date);
+CREATE TABLE IF NOT EXISTS splits (
+    symbol TEXT NOT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    date DATE NOT NULL,
+    optionable BOOLEAN NULL,
+    old_shares DOUBLE PRECISION NULL,
+    new_shares DOUBLE PRECISION NULL,
+    PRIMARY KEY (symbol, date, retrieval_date)
+);

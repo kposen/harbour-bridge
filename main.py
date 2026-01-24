@@ -28,7 +28,6 @@ from src.io.database import (
     write_exchange_list,
     write_holders,
     write_financial_facts,
-    write_earnings,
     write_insider_transactions,
     write_listings,
     write_market_metrics,
@@ -341,6 +340,7 @@ def run_download_pipeline(
     results_dir: Path,
     tickers: list[str],
     engine: Engine | None = None,
+    run_retrieval: datetime | None = None,
 ) -> list[str]:
     """Download data and populate the database."""
     logger.info("Starting download pipeline")
@@ -353,8 +353,9 @@ def run_download_pipeline(
         logger.debug("Candidate tickers: %s", tickers)
     else:
         logger.info("No tickers provided; download pipeline will only refresh calendars")
-    calendar_retrieval = datetime.now(UTC)
-    calendar_start = calendar_retrieval.date()
+    if run_retrieval is None:
+        run_retrieval = datetime.now(UTC)
+    calendar_start = run_retrieval.date()
     calendar_lookahead = get_calendar_lookahead_days()
     logger.debug("Calendar look-ahead requested: %d days", calendar_lookahead)
     if calendar_lookahead > 30:
@@ -408,7 +409,7 @@ def run_download_pipeline(
     )
     exchange_inserted = write_exchange_list(
         engine=engine,
-        retrieval_date=calendar_retrieval,
+        retrieval_date=run_retrieval,
         payload=exchange_payload,
     )
     if exchange_inserted == 0:
@@ -424,13 +425,12 @@ def run_download_pipeline(
         )
     share_universe_inserted = 0
     for exchange_code in exchange_codes:
-        share_retrieval = datetime.now(UTC)
         share_payload = fetch_exchange_share_list(exchange_code)
         if share_payload is not None:
             save_exchange_shares_payload(data_dir, exchange_code, share_payload)
             inserted_rows = write_share_universe(
                 engine=engine,
-                retrieval_date=share_retrieval,
+                retrieval_date=run_retrieval,
                 payload=share_payload,
             )
             share_universe_inserted += inserted_rows
@@ -448,7 +448,7 @@ def run_download_pipeline(
         logger.info("No share universe rows inserted")
     inserted = write_corporate_actions_calendar(
         engine=engine,
-        retrieval_date=calendar_retrieval,
+        retrieval_date=run_retrieval,
         earnings_payload=upcoming_earnings,
         splits_payload=upcoming_splits,
         dividends_payloads=dividend_payloads,
@@ -464,7 +464,7 @@ def run_download_pipeline(
     provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
-        retrieval_date = datetime.now(UTC)
+        retrieval_date = run_retrieval
         price_start = _price_start_date(engine, ticker, provider)
         if price_start is None:
             logger.debug("No stored price history for %s; fetching full history", ticker)
@@ -510,12 +510,6 @@ def run_download_pipeline(
             retrieval_date=retrieval_date,
             raw_data=raw_data,
         )
-        write_earnings(
-            engine=engine,
-            symbol=ticker,
-            retrieval_date=retrieval_date,
-            raw_data=raw_data,
-        )
         write_holders(
             engine=engine,
             symbol=ticker,
@@ -548,11 +542,14 @@ def run_forecast_pipeline(
     results_dir: Path,
     tickers: list[str],
     engine: Engine | None = None,
+    run_retrieval: datetime | None = None,
 ) -> None:
     """Generate forecasts using database facts."""
     logger.info("Starting forecast pipeline")
     if engine is None:
         engine = _init_engine(database_required=True)
+    if run_retrieval is None:
+        run_retrieval = datetime.now(UTC)
     if not tickers:
         tickers = get_symbols_with_history(engine, provider="EODHD")
         if tickers:
@@ -586,7 +583,7 @@ def run_forecast_pipeline(
             engine=engine,
             symbol=ticker,
             provider=provider,
-            retrieval_date=datetime.now(UTC),
+            retrieval_date=run_retrieval,
             model=forecast_only_model,
             filing_dates=filing_dates,
             period_type="annual",
@@ -598,8 +595,9 @@ def run_forecast_pipeline(
 def run_pipeline(results_dir: Path, tickers: list[str]) -> None:
     """Run download and forecast pipelines sequentially."""
     engine = _init_engine(database_required=True)
-    run_download_pipeline(results_dir, tickers, engine=engine)
-    run_forecast_pipeline(results_dir, tickers, engine=engine)
+    run_retrieval = datetime.now(UTC)
+    run_download_pipeline(results_dir, tickers, engine=engine, run_retrieval=run_retrieval)
+    run_forecast_pipeline(results_dir, tickers, engine=engine, run_retrieval=run_retrieval)
 
 
 def _ensure_base_directories() -> tuple[Path, Path, bool, bool]:

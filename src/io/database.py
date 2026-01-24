@@ -393,19 +393,6 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_market_metrics_symbol
         ON market_metrics (symbol, retrieval_date);
-    CREATE TABLE IF NOT EXISTS earnings (
-        symbol TEXT NOT NULL,
-        date DATE NOT NULL,
-        period_type TEXT NOT NULL,
-        field TEXT NOT NULL,
-        retrieval_date TIMESTAMPTZ NOT NULL,
-        value_float DOUBLE PRECISION NULL,
-        value_text TEXT NULL,
-        value_type TEXT NOT NULL,
-        PRIMARY KEY (symbol, date, period_type, field, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_earnings_symbol_date
-        ON earnings (symbol, date);
     CREATE TABLE IF NOT EXISTS holders (
         symbol TEXT NOT NULL,
         date DATE NOT NULL,
@@ -489,33 +476,40 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_universe_symbol
         ON universe (symbol, exchange);
-    CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
+    CREATE TABLE IF NOT EXISTS earnings (
         symbol TEXT NOT NULL,
-        date_retrieved TIMESTAMPTZ NOT NULL,
-        earnings_report_date DATE NULL,
-        earnings_fiscal_date DATE NULL,
-        earnings_before_after_market TEXT NULL,
-        earnings_currency TEXT NULL,
-        earnings_actual DOUBLE PRECISION NULL,
-        earnings_estimate DOUBLE PRECISION NULL,
-        earnings_difference DOUBLE PRECISION NULL,
-        earnings_percent DOUBLE PRECISION NULL,
-        dividend_date DATE NULL,
-        dividend_currency TEXT NULL,
-        dividend_amount DOUBLE PRECISION NULL,
-        dividend_period TEXT NULL,
-        dividend_declaration_date DATE NULL,
-        dividend_record_date DATE NULL,
-        dividend_payment_date DATE NULL,
-        split_date DATE NULL,
-        split_optionable BOOLEAN NULL,
-        split_old_shares DOUBLE PRECISION NULL,
-        split_new_shares DOUBLE PRECISION NULL
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        date DATE NOT NULL,
+        fiscal_date DATE NULL,
+        before_after_market TEXT NULL,
+        currency TEXT NULL,
+        actual DOUBLE PRECISION NULL,
+        estimate DOUBLE PRECISION NULL,
+        difference DOUBLE PRECISION NULL,
+        percent DOUBLE PRECISION NULL,
+        PRIMARY KEY (symbol, date, retrieval_date)
     );
-    CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_earnings
-        ON corporate_actions_calendar (symbol, earnings_report_date);
-    CREATE INDEX IF NOT EXISTS IX_corporate_actions_symbol_split
-        ON corporate_actions_calendar (symbol, split_date);
+    CREATE TABLE IF NOT EXISTS dividends (
+        symbol TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        date DATE NOT NULL,
+        currency TEXT NULL,
+        amount DOUBLE PRECISION NULL,
+        period TEXT NULL,
+        declaration_date DATE NULL,
+        record_date DATE NULL,
+        payment_date DATE NULL,
+        PRIMARY KEY (symbol, date, retrieval_date)
+    );
+    CREATE TABLE IF NOT EXISTS splits (
+        symbol TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        date DATE NOT NULL,
+        optionable BOOLEAN NULL,
+        old_shares DOUBLE PRECISION NULL,
+        new_shares DOUBLE PRECISION NULL,
+        PRIMARY KEY (symbol, date, retrieval_date)
+    );
     """
 
 
@@ -650,65 +644,6 @@ def write_prices(
         if not rows_to_insert:
             return 0
         logger.info("Writing %d price rows for %s", len(rows_to_insert), symbol)
-        conn.execute(insert_sql, rows_to_insert)
-    return len(rows_to_insert)
-
-
-def write_earnings(
-    engine: Engine,
-    symbol: str,
-    retrieval_date: datetime,
-    raw_data: Mapping[str, object],
-) -> int:
-    """Write earnings payload data to the earnings table.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): When the payload was retrieved.
-        raw_data (Mapping[str, object]): Raw provider payload.
-
-    Returns:
-        int: Number of inserted rows.
-    """
-    rows = list(_iter_earnings_rows(symbol, retrieval_date, raw_data))
-    if not rows:
-        return 0
-    insert_sql = text(
-        """
-        INSERT INTO earnings (
-            symbol,
-            date,
-            period_type,
-            field,
-            retrieval_date,
-            value_float,
-            value_text,
-            value_type
-        )
-        VALUES (
-            :symbol,
-            :date,
-            :period_type,
-            :field,
-            :retrieval_date,
-            :value_float,
-            :value_text,
-            :value_type
-        )
-        """
-    )
-    match_columns = ("symbol", "date", "period_type", "field")
-    with engine.begin() as conn:
-        rows_to_insert = _filter_versioned_rows(
-            conn=conn,
-            table="earnings",
-            rows=rows,
-            match_columns=match_columns,
-        )
-        if not rows_to_insert:
-            return 0
-        logger.info("Writing %d earnings rows for %s", len(rows_to_insert), symbol)
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
 
@@ -1076,7 +1011,7 @@ def write_corporate_actions_calendar(
     splits_payload: object | None,
     dividends_payloads: list[object],
 ) -> int:
-    """Write upcoming earnings, splits, and dividends to the corporate calendar table.
+    """Write upcoming earnings, splits, and dividends to corporate actions tables.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.
@@ -1104,53 +1039,77 @@ def write_corporate_actions_calendar(
     if not earnings_rows and not splits_rows and not dividends_rows:
         logger.debug("No corporate actions calendar rows parsed from payloads")
         return 0
-    insert_sql = text(
+    earnings_insert = text(
         """
-        INSERT INTO corporate_actions_calendar (
+        INSERT INTO earnings (
             symbol,
-            date_retrieved,
-            earnings_report_date,
-            earnings_fiscal_date,
-            earnings_before_after_market,
-            earnings_currency,
-            earnings_actual,
-            earnings_estimate,
-            earnings_difference,
-            earnings_percent,
-            dividend_date,
-            dividend_currency,
-            dividend_amount,
-            dividend_period,
-            dividend_declaration_date,
-            dividend_record_date,
-            dividend_payment_date,
-            split_date,
-            split_optionable,
-            split_old_shares,
-            split_new_shares
+            retrieval_date,
+            date,
+            fiscal_date,
+            before_after_market,
+            currency,
+            actual,
+            estimate,
+            difference,
+            percent
         )
         VALUES (
             :symbol,
-            :date_retrieved,
-            :earnings_report_date,
-            :earnings_fiscal_date,
-            :earnings_before_after_market,
-            :earnings_currency,
-            :earnings_actual,
-            :earnings_estimate,
-            :earnings_difference,
-            :earnings_percent,
-            :dividend_date,
-            :dividend_currency,
-            :dividend_amount,
-            :dividend_period,
-            :dividend_declaration_date,
-            :dividend_record_date,
-            :dividend_payment_date,
-            :split_date,
-            :split_optionable,
-            :split_old_shares,
-            :split_new_shares
+            :retrieval_date,
+            :date,
+            :fiscal_date,
+            :before_after_market,
+            :currency,
+            :actual,
+            :estimate,
+            :difference,
+            :percent
+        )
+        """
+    )
+    dividends_insert = text(
+        """
+        INSERT INTO dividends (
+            symbol,
+            retrieval_date,
+            date,
+            currency,
+            amount,
+            period,
+            declaration_date,
+            record_date,
+            payment_date
+        )
+        VALUES (
+            :symbol,
+            :retrieval_date,
+            :date,
+            :currency,
+            :amount,
+            :period,
+            :declaration_date,
+            :record_date,
+            :payment_date
+        )
+        """
+    )
+    splits_insert = text(
+        """
+        INSERT INTO splits (
+            symbol,
+            retrieval_date,
+            date,
+            optionable,
+            old_shares,
+            new_shares
+        )
+        VALUES (
+            :symbol,
+            :retrieval_date,
+            :date,
+            :optionable,
+            :old_shares,
+            :new_shares
         )
         """
     )
@@ -1159,10 +1118,9 @@ def write_corporate_actions_calendar(
         if earnings_rows:
             rows_to_insert = _filter_versioned_rows(
                 conn=conn,
-                table="corporate_actions_calendar",
+                table="earnings",
                 rows=earnings_rows,
-                match_columns=("symbol", "earnings_report_date"),
-                retrieval_column="date_retrieved",
+                match_columns=("symbol", "date"),
             )
             logger.debug(
                 "Earnings calendar rows: %d candidate, %d new after dedup",
@@ -1171,17 +1129,16 @@ def write_corporate_actions_calendar(
             )
             if rows_to_insert:
                 logger.info("Writing %d upcoming earnings calendar rows", len(rows_to_insert))
-                conn.execute(insert_sql, rows_to_insert)
+                conn.execute(earnings_insert, rows_to_insert)
                 inserted += len(rows_to_insert)
             else:
                 logger.debug("No new earnings calendar rows after deduplication")
         if splits_rows:
             rows_to_insert = _filter_versioned_rows(
                 conn=conn,
-                table="corporate_actions_calendar",
+                table="splits",
                 rows=splits_rows,
-                match_columns=("symbol", "split_date"),
-                retrieval_column="date_retrieved",
+                match_columns=("symbol", "date"),
             )
             logger.debug(
                 "Splits calendar rows: %d candidate, %d new after dedup",
@@ -1190,17 +1147,16 @@ def write_corporate_actions_calendar(
             )
             if rows_to_insert:
                 logger.info("Writing %d upcoming splits calendar rows", len(rows_to_insert))
-                conn.execute(insert_sql, rows_to_insert)
+                conn.execute(splits_insert, rows_to_insert)
                 inserted += len(rows_to_insert)
             else:
                 logger.debug("No new splits calendar rows after deduplication")
         if dividends_rows:
             rows_to_insert = _filter_versioned_rows(
                 conn=conn,
-                table="corporate_actions_calendar",
+                table="dividends",
                 rows=dividends_rows,
-                match_columns=("symbol", "dividend_date"),
-                retrieval_column="date_retrieved",
+                match_columns=("symbol", "date"),
             )
             logger.debug(
                 "Dividends calendar rows: %d candidate, %d new after dedup",
@@ -1209,7 +1165,7 @@ def write_corporate_actions_calendar(
             )
             if rows_to_insert:
                 logger.info("Writing %d upcoming dividends calendar rows", len(rows_to_insert))
-                conn.execute(insert_sql, rows_to_insert)
+                conn.execute(dividends_insert, rows_to_insert)
                 inserted += len(rows_to_insert)
             else:
                 logger.debug("No new dividends calendar rows after deduplication")
@@ -1558,26 +1514,15 @@ def _iter_earnings_calendar_rows(
     return [
         {
             "symbol": code,
-            "date_retrieved": retrieval_date,
-            "earnings_report_date": report_date,
-            "earnings_fiscal_date": fiscal_date,
-            "earnings_before_after_market": before_after,
-            "earnings_currency": currency,
-            "earnings_actual": _to_float(entry.get("actual")),
-            "earnings_estimate": _to_float(entry.get("estimate")),
-            "earnings_difference": _to_float(entry.get("difference")),
-            "earnings_percent": _to_float_allow_percent(entry.get("percent")),
-            "dividend_date": None,
-            "dividend_currency": None,
-            "dividend_amount": None,
-            "dividend_period": None,
-            "dividend_declaration_date": None,
-            "dividend_record_date": None,
-            "dividend_payment_date": None,
-            "split_date": None,
-            "split_optionable": None,
-            "split_old_shares": None,
-            "split_new_shares": None,
+            RETRIEVAL_COLUMN: retrieval_date,
+            "date": report_date,
+            "fiscal_date": fiscal_date,
+            "before_after_market": before_after,
+            "currency": currency,
+            "actual": _to_float(entry.get("actual")),
+            "estimate": _to_float(entry.get("estimate")),
+            "difference": _to_float(entry.get("difference")),
+            "percent": _to_float_allow_percent(entry.get("percent")),
         }
         for entry in _calendar_entries(payload)
         for code in [_calendar_code(entry)]
@@ -1633,26 +1578,11 @@ def _iter_split_calendar_rows(
     return [
         {
             "symbol": code,
-            "date_retrieved": retrieval_date,
-            "earnings_report_date": None,
-            "earnings_fiscal_date": None,
-            "earnings_before_after_market": None,
-            "earnings_currency": None,
-            "earnings_actual": None,
-            "earnings_estimate": None,
-            "earnings_difference": None,
-            "earnings_percent": None,
-            "dividend_date": None,
-            "dividend_currency": None,
-            "dividend_amount": None,
-            "dividend_period": None,
-            "dividend_declaration_date": None,
-            "dividend_record_date": None,
-            "dividend_payment_date": None,
-            "split_date": split_date,
-            "split_optionable": _parse_optionable(entry.get("optionable")),
-            "split_old_shares": _to_float(entry.get("old_shares")),
-            "split_new_shares": _to_float(entry.get("new_shares")),
+            RETRIEVAL_COLUMN: retrieval_date,
+            "date": split_date,
+            "optionable": _parse_optionable(entry.get("optionable")),
+            "old_shares": _to_float(entry.get("old_shares")),
+            "new_shares": _to_float(entry.get("new_shares")),
         }
         for entry in _calendar_entries(payload)
         for code in [_calendar_code(entry)]
@@ -1684,38 +1614,26 @@ def _iter_dividend_calendar_rows(
     return [
         {
             "symbol": code,
-            "date_retrieved": retrieval_date,
-            "earnings_report_date": None,
-            "earnings_fiscal_date": None,
-            "earnings_before_after_market": None,
-            "earnings_currency": None,
-            "earnings_actual": None,
-            "earnings_estimate": None,
-            "earnings_difference": None,
-            "earnings_percent": None,
-            "dividend_date": dividend_date,
-            "dividend_currency": _normalize_text_value(
+            RETRIEVAL_COLUMN: retrieval_date,
+            "date": dividend_date,
+            "currency": _normalize_text_value(
                 _first_present(entry, ("currency", "Currency"))
             ),
-            "dividend_amount": _to_float(
+            "amount": _to_float(
                 _first_present(entry, ("dividend", "amount", "value"))
             ),
-            "dividend_period": _normalize_text_value(
+            "period": _normalize_text_value(
                 _first_present(entry, ("period", "Period"))
             ),
-            "dividend_declaration_date": _parse_date(
+            "declaration_date": _parse_date(
                 _first_present(entry, ("declarationDate", "declaration_date"))
             ),
-            "dividend_record_date": _parse_date(
+            "record_date": _parse_date(
                 _first_present(entry, ("recordDate", "record_date"))
             ),
-            "dividend_payment_date": _parse_date(
+            "payment_date": _parse_date(
                 _first_present(entry, ("paymentDate", "payment_date"))
             ),
-            "split_date": None,
-            "split_optionable": None,
-            "split_old_shares": None,
-            "split_new_shares": None,
         }
         for entry in _calendar_entries(payload)
         for code in [_calendar_code(entry)]
@@ -1727,128 +1645,6 @@ def _iter_dividend_calendar_rows(
         ]
         if dividend_date is not None
     ]
-
-
-def _iter_earnings_rows(
-    symbol: str,
-    retrieval_date: datetime,
-    raw_data: Mapping[str, object],
-) -> Iterable[dict[str, object]]:
-    """Yield earnings rows from the payload.
-
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): When the payload was retrieved.
-        raw_data (Mapping[str, object]): Raw provider payload.
-
-    Returns:
-        Iterable[dict[str, object]]: Row dictionaries for insertion.
-    """
-    earnings = raw_data.get("Earnings")
-    if not isinstance(earnings, Mapping):
-        return []
-    branches = (("History", "quarterly"), ("Annual", "annual"), ("Trend", "trend"))
-
-    def branch_rows(pair: tuple[str, str]) -> Iterable[dict[str, object]]:
-        """Build earnings rows for a branch tuple.
-
-        Args:
-            pair (tuple[str, str]): Branch key and period type.
-
-        Returns:
-            Iterable[dict[str, object]]: Row dictionaries for insertion.
-        """
-        branch, period_type = pair
-        return _iter_earnings_branch(
-            symbol=symbol,
-            retrieval_date=retrieval_date,
-            period_type=period_type,
-            data=earnings.get(branch),
-        )
-
-    return mapcat(branch_rows, branches)
-
-
-def _iter_earnings_branch(
-    symbol: str,
-    retrieval_date: datetime,
-    period_type: str,
-    data: object,
-) -> Iterable[dict[str, object]]:
-    """Yield earnings rows for a specific earnings branch.
-
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): Retrieval timestamp.
-        period_type (str): Period type label ("annual", "quarterly", "trend").
-        data (object): Branch payload to parse.
-
-    Returns:
-        Iterable[dict[str, object]]: Row dictionaries for insertion.
-    """
-    if not isinstance(data, Mapping):
-        return []
-    entry_rows = partial(
-        _iter_earnings_entry_rows,
-        symbol,
-        retrieval_date,
-        period_type,
-    )
-    entries = (entry for entry in data.values() if isinstance(entry, Mapping))
-    return mapcat(entry_rows, entries)
-
-
-def _iter_earnings_entry_rows(
-    symbol: str,
-    retrieval_date: datetime,
-    period_type: str,
-    entry: Mapping[str, object],
-) -> list[dict[str, object]]:
-    """Yield earnings rows for a single entry in a branch.
-
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        retrieval_date (datetime): Retrieval timestamp.
-        period_type (str): Period type label.
-        entry (Mapping[str, object]): Entry payload to parse.
-
-    Returns:
-        list[dict[str, object]]: Row dictionaries for insertion.
-    """
-    period = _parse_date(entry.get("date"))
-    if period is None:
-        return []
-
-    def row_for_field(field: str, raw_value: object) -> dict[str, object] | None:
-        """Build an earnings row for a single field/value pair.
-
-        Args:
-            field (str): Field name for the entry.
-            raw_value (object): Raw field value.
-
-        Returns:
-            dict[str, object] | None: Row dictionary or None when invalid.
-        """
-        if field in ("reportDate", "date"):
-            return None
-        if isinstance(raw_value, (dict, list)):
-            return None
-        base = {
-            "symbol": symbol,
-            "date": period,
-            "period_type": period_type,
-            "field": str(field),
-            "retrieval_date": retrieval_date,
-        }
-        return _typed_metric_row(base, raw_value)
-
-    rows = [
-        row
-        for field, raw_value in entry.items()
-        for row in [row_for_field(str(field), raw_value)]
-        if row is not None
-    ]
-    return rows
 
 
 def _iter_holders_rows(
