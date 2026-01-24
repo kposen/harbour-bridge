@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from datetime import UTC, date, datetime
 from functools import partial
 from itertools import chain
@@ -50,6 +51,7 @@ PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
 RETRIEVAL_COLUMN = "retrieval_date"
 SCRATCH_TABLE = "pipeline_scratch"
 EXCHANGE_LIST_TABLE = "exchange_list"
+SHARE_UNIVERSE_TABLE = "share_universe"
 EXCHANGE_LIST_COLUMNS = (
     "name",
     "operating_mic",
@@ -57,6 +59,16 @@ EXCHANGE_LIST_COLUMNS = (
     "currency",
     "country_iso2",
     "country_iso3",
+)
+SHARE_UNIVERSE_COLUMNS = (
+    "symbol",
+    "code",
+    "name",
+    "country",
+    "exchange",
+    "currency",
+    "type",
+    "isin",
 )
 EXCHANGE_LIST_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "name": ("Name", "name"),
@@ -136,6 +148,81 @@ def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | 
     with engine.begin() as conn:
         result = conn.execute(query, {"symbol": symbol, "provider": provider}).scalar()
     return _parse_date(result)
+
+
+def get_exchange_codes(engine: Engine) -> list[str]:
+    """Return the latest exchange codes with complete metadata.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+
+    Returns:
+        list[str]: Exchange codes from the most recent rows per exchange.
+    """
+    query = text(
+        f"""
+        SELECT
+            code,
+            {", ".join(EXCHANGE_LIST_COLUMNS)}
+        FROM {EXCHANGE_LIST_TABLE}
+        WHERE (code, {RETRIEVAL_COLUMN}) IN (
+            SELECT code, MAX({RETRIEVAL_COLUMN})
+            FROM {EXCHANGE_LIST_TABLE}
+            GROUP BY code
+        )
+        ORDER BY code
+        """
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(query).mappings().all()
+    if not rows:
+        logger.info("No exchange list rows available for share universe refresh")
+        return []
+    annotated = [
+        {
+            "code": _normalize_exchange_code(row),
+            "missing_fields": _exchange_missing_fields(row),
+        }
+        for row in rows
+    ]
+    valid_codes = [
+        code
+        for item in annotated
+        for code in [item["code"]]
+        if code is not None and not item["missing_fields"]
+    ]
+    invalid = [
+        {
+            "code": item["code"] or "<missing>",
+            "missing_fields": item["missing_fields"],
+        }
+        for item in annotated
+        if item["code"] is None or item["missing_fields"]
+    ]
+    missing_code_count = sum(1 for item in annotated if item["code"] is None)
+    logger.info(
+        "Exchange list filter: total=%d eligible=%d skipped=%d",
+        len(rows),
+        len(valid_codes),
+        len(invalid),
+    )
+    if missing_code_count:
+        logger.debug("Skipped %d exchanges with missing codes", missing_code_count)
+    if invalid:
+        missing_counts = Counter(
+            chain.from_iterable(
+                item["missing_fields"]
+                for item in invalid
+                if item["missing_fields"]
+            )
+        )
+        logger.debug(
+            "Skipped exchanges due to incomplete metadata (sample): %s",
+            invalid[:25],
+        )
+        if missing_counts:
+            logger.debug("Missing exchange field counts: %s", dict(missing_counts))
+    return valid_codes
 
 
 def ensure_schema(engine: Engine) -> None:
@@ -280,6 +367,20 @@ def _postgres_schema_sql() -> str:
     );
     CREATE INDEX IF NOT EXISTS IX_exchange_list_code
         ON exchange_list (code);
+    CREATE TABLE IF NOT EXISTS share_universe (
+        symbol TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NULL,
+        country TEXT NULL,
+        exchange TEXT NOT NULL,
+        currency TEXT NULL,
+        type TEXT NULL,
+        isin TEXT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (symbol, exchange, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_share_universe_symbol
+        ON share_universe (symbol, exchange);
     CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
         symbol TEXT NOT NULL,
         date_retrieved TIMESTAMPTZ NOT NULL,
@@ -725,6 +826,59 @@ def write_exchange_list(
     return len(rows_to_insert)
 
 
+def write_share_universe(
+    engine: Engine,
+    retrieval_date: datetime,
+    payload: object | None,
+) -> int:
+    """Write share universe rows to the share_universe table.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw share universe payload for one exchange.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows = _share_universe_rows(retrieval_date, payload)
+    if not rows:
+        logger.debug("No share universe rows parsed from payload")
+        return 0
+    logger.debug("Prepared %d share universe rows for insertion", len(rows))
+    columns = [*SHARE_UNIVERSE_COLUMNS, RETRIEVAL_COLUMN]
+    insert_sql = text(
+        f"""
+        INSERT INTO {SHARE_UNIVERSE_TABLE} (
+            {", ".join(columns)}
+        )
+        VALUES (
+            {", ".join(f":{column}" for column in columns)}
+        )
+        """
+    )
+    with engine.begin() as conn:
+        rows = [{column: row.get(column) for column in columns} for row in rows]
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table=SHARE_UNIVERSE_TABLE,
+            rows=rows,
+            match_columns=("symbol", "exchange"),
+            retrieval_column=RETRIEVAL_COLUMN,
+        )
+        logger.debug(
+            "Share universe rows: %d candidate, %d new after dedup",
+            len(rows),
+            len(rows_to_insert),
+        )
+        if not rows_to_insert:
+            logger.debug("No new share universe rows to insert after deduplication")
+            return 0
+        logger.info("Writing %d share universe rows", len(rows_to_insert))
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
+
+
 def run_database_preflight(engine: Engine) -> None:
     """Run database connectivity and scratch-table tests.
 
@@ -978,6 +1132,87 @@ def _exchange_rows(
     return rows
 
 
+def _share_universe_rows(
+    retrieval_date: datetime,
+    payload: object | None,
+) -> list[dict[str, object]]:
+    """Build share universe rows from a single exchange payload.
+
+    Args:
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (object | None): Raw share universe payload.
+
+    Returns:
+        list[dict[str, object]]: Share universe rows keyed by columns.
+    """
+    if payload is None:
+        return []
+    entries = _share_universe_entries(payload)
+    if not entries:
+        logger.debug("Share universe payload contained no usable entries")
+        return []
+    normalized = [
+        (
+            entry,
+            _normalize_share_code(_first_present(entry, ("Code", "code", "CODE"))),
+            _normalize_share_code(_first_present(entry, ("Exchange", "exchange"))),
+        )
+        for entry in entries
+    ]
+    missing_code = sum(1 for _, code, _ in normalized if code is None)
+    missing_exchange = sum(1 for _, _, exchange in normalized if exchange is None)
+    rows = [
+        {
+            RETRIEVAL_COLUMN: retrieval_date,
+            "symbol": f"{code}.{exchange}",
+            "code": code,
+            "name": _normalize_share_value(_first_present(entry, ("Name", "name"))),
+            "country": _normalize_share_value(_first_present(entry, ("Country", "country"))),
+            "exchange": exchange,
+            "currency": _normalize_share_value(_first_present(entry, ("Currency", "currency"))),
+            "type": _normalize_share_value(_first_present(entry, ("Type", "type"))),
+            "isin": _normalize_share_value(_first_present(entry, ("Isin", "ISIN", "isin"))),
+        }
+        for entry, code, exchange in normalized
+        if code is not None and exchange is not None
+    ]
+    if missing_code or missing_exchange:
+        skipped = [
+            {"code": code, "exchange": exchange}
+            for _, code, exchange in normalized
+            if code is None or exchange is None
+        ]
+        logger.debug(
+            "Share universe entries skipped due to missing identifiers: %d",
+            len(skipped),
+        )
+        logger.debug(
+            "Skipped share universe entries (sample): %s",
+            skipped[:25],
+        )
+    logger.debug(
+        "Share universe entry summary: total=%d valid=%d missing_code=%d missing_exchange=%d",
+        len(entries),
+        len(rows),
+        missing_code,
+        missing_exchange,
+    )
+    logger.debug("Parsed %d share universe entries into %d rows", len(entries), len(rows))
+    return rows
+
+
+def _share_universe_entries(payload: object) -> list[Mapping[str, object]]:
+    """Normalize share universe payloads into a list of entries."""
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, Mapping)]
+    if isinstance(payload, Mapping):
+        data = payload.get("data")
+        if isinstance(data, list):
+            return [entry for entry in data if isinstance(entry, Mapping)]
+        return [entry for entry in payload.values() if isinstance(entry, Mapping)]
+    return []
+
+
 def _exchange_entries(payload: object) -> list[Mapping[str, object]]:
     """Normalize exchange list payloads into a list of entries."""
     if isinstance(payload, list):
@@ -998,7 +1233,10 @@ def _normalize_exchange_code(entry: Mapping[str, object]) -> str | None:
     raw_code = _first_present(entry, ("Code", "code", "CODE"))
     if isinstance(raw_code, str):
         stripped = raw_code.strip()
-        return stripped.upper() if stripped else None
+        if not stripped:
+            return None
+        upper = stripped.upper()
+        return None if upper == "UNKNOWN" else upper
     return None
 
 
@@ -1140,6 +1378,47 @@ def _normalize_exchange_value(value: object) -> object | None:
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True)
     return str(value)
+
+
+def _is_exchange_field_complete(value: object) -> bool:
+    """Check whether an exchange list field is present and not 'Unknown'."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+    else:
+        text = str(value).strip()
+    if not text:
+        return False
+    return text.upper() != "UNKNOWN"
+
+
+def _exchange_missing_fields(row: Mapping[str, object]) -> tuple[str, ...]:
+    """Return missing exchange fields for completeness checks."""
+    return tuple(
+        column
+        for column in EXCHANGE_LIST_COLUMNS
+        if not _is_exchange_field_complete(row.get(column))
+    )
+
+
+def _normalize_share_value(value: object) -> str | None:
+    """Normalize share universe values into trimmed strings."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else None
+    return str(value)
+
+
+def _normalize_share_code(value: object) -> str | None:
+    """Normalize share universe code values to uppercase."""
+    text = _normalize_share_value(value)
+    if text is None:
+        return None
+    upper = text.upper()
+    return None if upper == "UNKNOWN" else upper
 
 
 def _iter_earnings_calendar_rows(

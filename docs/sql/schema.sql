@@ -137,6 +137,22 @@ CREATE TABLE IF NOT EXISTS exchange_list (
 CREATE INDEX IF NOT EXISTS IX_exchange_list_code
     ON exchange_list (code);
 
+CREATE TABLE IF NOT EXISTS share_universe (
+    symbol TEXT NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NULL,
+    country TEXT NULL,
+    exchange TEXT NOT NULL,
+    currency TEXT NULL,
+    type TEXT NULL,
+    isin TEXT NULL,
+    retrieval_date TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, exchange, retrieval_date)
+);
+
+CREATE INDEX IF NOT EXISTS IX_share_universe_symbol
+    ON share_universe (symbol, exchange);
+
 CREATE TABLE IF NOT EXISTS corporate_actions_calendar (
     symbol TEXT NOT NULL,
     date_retrieved TIMESTAMPTZ NOT NULL,

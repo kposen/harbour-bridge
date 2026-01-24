@@ -21,6 +21,7 @@ from src.io.database import (
     get_latest_filing_date,
     get_latest_price_date,
     get_symbols_with_history,
+    get_exchange_codes,
     load_historic_model_from_db,
     run_database_preflight,
     write_corporate_actions_calendar,
@@ -33,11 +34,13 @@ from src.io.database import (
     write_market_metrics,
     write_prices,
     write_reported_facts,
+    write_share_universe,
 )
 from src.io.reporting import export_model_to_excel
 from src.io.storage import (
     build_run_data_dir,
     save_exchanges_list_payload,
+    save_exchange_shares_payload,
     save_upcoming_dividends_payload,
     save_upcoming_earnings_payload,
     save_upcoming_splits_payload,
@@ -277,6 +280,41 @@ def fetch_exchange_list() -> object | None:
     return payload
 
 
+def fetch_exchange_share_list(exchange_code: str) -> object | None:
+    """Fetch the share universe for a specific exchange code."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    normalized = exchange_code.strip().upper()
+    if not normalized:
+        logger.info("Exchange code is empty; skipping share universe request")
+        return None
+    logger.info("Fetching share universe for %s", normalized)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/exchange-symbol-list/{normalized}",
+            params={"api_token": api_key, "fmt": "json"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        logger.info("Share universe request failed for %s: %s", normalized, exc)
+        return None
+    except ValueError as exc:
+        logger.info("Failed to decode share universe JSON for %s: %s", normalized, exc)
+        return None
+    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+        logger.info("EODHD share universe error payload for %s: %s", normalized, payload)
+        return None
+    if not isinstance(payload, (list, dict)):
+        logger.info("EODHD share universe response did not return JSON rows for %s", normalized)
+        return None
+    if isinstance(payload, list):
+        logger.debug("Received %d share universe entries for %s", len(payload), normalized)
+    return payload
+
+
 def _init_engine(database_required: bool) -> Engine | None:
     """Initialize a Postgres engine with preflight checks."""
     database_url = os.getenv("HARBOUR_BRIDGE_DB_URL")
@@ -375,6 +413,39 @@ def run_download_pipeline(
     )
     if exchange_inserted == 0:
         logger.info("No exchange list rows inserted")
+    exchange_codes = get_exchange_codes(engine)
+    if not exchange_codes:
+        logger.info("No eligible exchanges found; skipping share universe refresh")
+    else:
+        logger.info("Refreshing share universe for %d exchanges", len(exchange_codes))
+        logger.debug(
+            "Exchange codes scheduled for share universe refresh (sample): %s",
+            exchange_codes[:25],
+        )
+    share_universe_inserted = 0
+    for exchange_code in exchange_codes:
+        share_retrieval = datetime.now(UTC)
+        share_payload = fetch_exchange_share_list(exchange_code)
+        if share_payload is not None:
+            save_exchange_shares_payload(data_dir, exchange_code, share_payload)
+            inserted_rows = write_share_universe(
+                engine=engine,
+                retrieval_date=share_retrieval,
+                payload=share_payload,
+            )
+            share_universe_inserted += inserted_rows
+            logger.debug(
+                "Share universe rows inserted for %s: %d",
+                exchange_code,
+                inserted_rows,
+            )
+        else:
+            logger.info(
+                "Skipping share universe persistence for %s due to fetch error",
+                exchange_code,
+            )
+    if share_universe_inserted == 0:
+        logger.info("No share universe rows inserted")
     inserted = write_corporate_actions_calendar(
         engine=engine,
         retrieval_date=calendar_retrieval,

@@ -183,6 +183,24 @@ def save_exchanges_list_payload(run_dir: Path, payload: object) -> Path:
     return path
 
 
+def save_exchange_shares_payload(run_dir: Path, exchange_code: str, payload: object) -> Path:
+    """Persist a share universe payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        exchange_code (str): Exchange code for the payload.
+        payload (object): Raw provider payload for exchange shares.
+
+    Returns:
+        Path: Path to the saved JSON payload.
+    """
+    normalized = exchange_code.strip().upper()
+    path = run_dir / f"shares.{normalized}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    logger.debug("Saved share universe payload to %s", path)
+    return path
+
+
 def _normalize_ticker(ticker: str) -> str:
     """Normalize ticker symbols for consistent filenames.
 
