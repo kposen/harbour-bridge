@@ -13,6 +13,7 @@ from typing import Any, Iterable, Mapping
 
 import requests  # type: ignore[import-untyped]
 from sqlalchemy.engine import Engine
+from tqdm import tqdm
 
 from src.config import (
     get_calendar_lookahead_days,
@@ -574,7 +575,15 @@ def run_download_pipeline(
     price_updates = 0
     price_full_history = 0
     price_overlap_refetch = 0
-    for candidate in price_candidates:
+    price_iterator = tqdm(
+        price_candidates,
+        total=price_total,
+        desc="Prices",
+        unit="symbol",
+        ascii=True,
+        disable=not sys.stderr.isatty(),
+    )
+    for candidate in price_iterator:
         symbol = candidate.get("symbol")
         if not isinstance(symbol, str) or not symbol:
             logger.warning("Skipping price refresh for invalid symbol entry: %s", candidate)

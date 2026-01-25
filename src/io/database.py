@@ -734,7 +734,6 @@ def write_prices(
         )
         if not rows_to_insert:
             return 0
-        logger.info("Writing %d price rows for %s", len(rows_to_insert), symbol)
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
 
