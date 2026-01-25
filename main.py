@@ -143,7 +143,6 @@ def fetch_prices(ticker: str, start_date: date | None) -> object | None:
     params: dict[str, str] = {"api_token": api_key, "fmt": "json"}
     if start_date is not None:
         params["from"] = start_date.isoformat()
-    logger.info("Fetching prices for %s", ticker)
     try:
         response = requests.get(
             f"https://eodhd.com/api/eod/{ticker}",
