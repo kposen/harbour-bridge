@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -8,6 +8,9 @@ import pytest
 from sqlalchemy.engine import Engine
 
 import main
+
+
+RUN_RETRIEVAL = datetime(2025, 6, 1, tzinfo=UTC)
 
 
 def test_apply_price_refresh_limit_prioritizes_oldest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,7 +48,7 @@ def test_price_refresh_refetches_on_overlap_mismatch(
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: date(2025, 1, 10))
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: date(2025, 1, 10))
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (1, 100.0))
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
     monkeypatch.setattr(main, "write_prices", lambda **kwargs: 1)
@@ -55,6 +58,7 @@ def test_price_refresh_refetches_on_overlap_mismatch(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert calls == [date(2025, 1, 10), None]
@@ -79,7 +83,7 @@ def test_price_refresh_skips_db_update_when_no_new_rows(
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: date(2025, 2, 1))
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: date(2025, 2, 1))
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (1, 100.0))
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
     monkeypatch.setattr(main, "write_prices", fake_write_prices)
@@ -89,6 +93,7 @@ def test_price_refresh_skips_db_update_when_no_new_rows(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert calls == [date(2025, 2, 1)]
@@ -110,7 +115,7 @@ def test_price_refresh_full_history_when_multiple_overlap_rows(
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: date(2025, 3, 1))
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: date(2025, 3, 1))
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (2, None))
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
     monkeypatch.setattr(main, "write_prices", lambda **kwargs: 1)
@@ -120,6 +125,7 @@ def test_price_refresh_full_history_when_multiple_overlap_rows(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert calls == [None]
@@ -142,7 +148,7 @@ def test_price_refresh_skips_after_failed_days(
     symbol_integrity_stub["failure_days"][(symbol, "prices")] = 7
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: None)
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: None)
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (0, None))
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
     monkeypatch.setattr(main, "write_prices", lambda **kwargs: 1)
@@ -152,6 +158,7 @@ def test_price_refresh_skips_after_failed_days(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert calls == []
@@ -171,7 +178,7 @@ def test_price_refresh_records_failure(
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: None)
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: None)
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (0, None))
     monkeypatch.setattr(main, "get_max_symbols_for_prices", lambda: -1)
 
@@ -179,6 +186,7 @@ def test_price_refresh_records_failure(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert any(
@@ -201,7 +209,7 @@ def test_price_refresh_records_success(
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
-    monkeypatch.setattr(main, "get_latest_price_date_any", lambda engine, s: None)
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: None)
     monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (0, None))
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
     monkeypatch.setattr(main, "write_prices", lambda **kwargs: 1)
@@ -211,6 +219,38 @@ def test_price_refresh_records_success(
         download_pipeline_stubs["tmp_path"],
         [],
         engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
     )
 
     assert any(row.get("status") == "success" for row in symbol_integrity_stub["rows"])
+
+
+def test_price_refresh_filters_out_today_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    download_pipeline_stubs: dict[str, Any],
+) -> None:
+    """Today's payload should be filtered to avoid intraday overlap refetches."""
+    symbol = "TODAY.SYM"
+    calls: list[date | None] = []
+
+    def fake_fetch_prices(ticker: str, start_date: date | None) -> main.PriceFetchResult:
+        calls.append(start_date)
+        payload = [{"date": "2025-06-01", "adjusted_close": "1.0"}]
+        return main.PriceFetchResult(payload=payload, error_code=None, message=None, http_status=None)
+
+    monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
+    monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [symbol])
+    monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, s, c: date(2025, 5, 31))
+    monkeypatch.setattr(main, "get_price_day_snapshot", lambda engine, s, d: (1, 1.0))
+    monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: Path("price.json"))
+    monkeypatch.setattr(main, "write_prices", lambda **kwargs: 1)
+    monkeypatch.setattr(main, "get_max_symbols_for_prices", lambda: -1)
+
+    main.run_download_pipeline(
+        download_pipeline_stubs["tmp_path"],
+        [],
+        engine=cast(Engine, object()),
+        run_retrieval=RUN_RETRIEVAL,
+    )
+
+    assert calls == [date(2025, 5, 31)]

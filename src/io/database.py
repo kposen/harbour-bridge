@@ -278,6 +278,37 @@ def get_latest_price_date_any(engine: Engine, symbol: str) -> date | None:
     return _parse_date(result)
 
 
+def get_latest_price_date_before(
+    engine: Engine,
+    symbol: str,
+    cutoff_date: date,
+) -> date | None:
+    """Fetch the most recent price date before the cutoff for a symbol.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        symbol (str): Ticker symbol to query.
+        cutoff_date (date): Exclusive cutoff date.
+
+    Returns:
+        date | None: Latest price date before the cutoff, or None if missing.
+    """
+    query = text(
+        """
+        SELECT MAX(date) AS latest_date
+        FROM prices
+        WHERE symbol = :symbol
+          AND date < :cutoff_date
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(
+            query,
+            {"symbol": symbol, "cutoff_date": cutoff_date},
+        ).scalar()
+    return _parse_date(result)
+
+
 def get_price_day_snapshot(engine: Engine, symbol: str, price_date: date) -> tuple[int, float | None]:
     """Return the number of price rows and adjusted close for a symbol/date.
 

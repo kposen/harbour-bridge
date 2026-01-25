@@ -27,10 +27,10 @@ from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
     append_symbol_integrity_row,
     ensure_schema,
-    get_latest_price_date_any,
     get_engine,
     get_latest_filing_date,
     get_latest_price_date,
+    get_latest_price_date_before,
     get_price_day_snapshot,
     get_price_refresh_symbols,
     get_symbol_failure_days,
@@ -609,8 +609,9 @@ def run_download_pipeline(
     if inserted == 0:
         logger.info("No corporate actions calendar rows inserted")
     provider = "EODHD"
+    price_cutoff = run_retrieval.date()
     max_price_symbols = get_max_symbols_for_prices()
-    price_candidates = _select_price_refresh_candidates(engine, max_price_symbols)
+    price_candidates = _select_price_refresh_candidates(engine, max_price_symbols, price_cutoff)
     if not price_candidates:
         logger.info("No symbols selected for price refresh; skipping price update")
     else:
@@ -683,8 +684,10 @@ def run_download_pipeline(
                 message=result.message,
             )
             continue
-        price_payload = result.payload
-        if start_date is not None and isinstance(price_payload, list) and not price_payload:
+        price_payload = _filter_price_payload_for_cutoff(result.payload, price_cutoff)
+        if (isinstance(price_payload, list) and not price_payload) or (
+            isinstance(price_payload, dict) and not price_payload
+        ):
             price_no_new += 1
             append_symbol_integrity_row(
                 engine=engine,
@@ -722,18 +725,19 @@ def run_download_pipeline(
                         message=refetch.message,
                     )
                     continue
-                price_payload = refetch.payload
-        if isinstance(price_payload, list):
-            if not price_payload:
-                price_no_new += 1
-                append_symbol_integrity_row(
-                    engine=engine,
-                    symbol=symbol,
-                    pipeline="prices",
-                    retrieval_date=run_retrieval,
-                    status="success",
-                )
-                continue
+                price_payload = _filter_price_payload_for_cutoff(refetch.payload, price_cutoff)
+                if (isinstance(price_payload, list) and not price_payload) or (
+                    isinstance(price_payload, dict) and not price_payload
+                ):
+                    price_no_new += 1
+                    append_symbol_integrity_row(
+                        engine=engine,
+                        symbol=symbol,
+                        pipeline="prices",
+                        retrieval_date=run_retrieval,
+                        status="success",
+                    )
+                    continue
         save_price_payload(data_dir, symbol, price_payload)
         write_prices(
             engine=engine,
@@ -938,13 +942,14 @@ def _due_refresh_records(
 def _select_price_refresh_candidates(
     engine: Engine,
     max_symbols: int,
+    cutoff_date: date,
 ) -> list[dict[str, object]]:
     """Select symbols for price refresh based on staleness and cap."""
     symbols = get_price_refresh_symbols(engine)
     if not symbols:
         return []
     latest_by_symbol = {
-        symbol: get_latest_price_date_any(engine, symbol)
+        symbol: get_latest_price_date_before(engine, symbol, cutoff_date)
         for symbol in symbols
     }
     selected_symbols = _apply_price_refresh_limit(latest_by_symbol, max_symbols)
@@ -1048,6 +1053,27 @@ def _payload_adjusted_close_for_date(
         )
         return _coerce_price_value(raw_value)
     return None
+
+
+def _filter_price_payload_for_cutoff(payload: object, cutoff_date: date) -> object:
+    """Filter payload entries to dates strictly before the cutoff."""
+    if isinstance(payload, list):
+        return [
+            entry
+            for entry in payload
+            if isinstance(entry, Mapping)
+            for entry_date in [_coerce_payload_date(entry.get("date"))]
+            if entry_date is not None and entry_date < cutoff_date
+        ]
+    if isinstance(payload, Mapping):
+        return {
+            key: entry
+            for key, entry in payload.items()
+            if isinstance(entry, Mapping)
+            for entry_date in [_coerce_payload_date(entry.get("date"))]
+            if entry_date is not None and entry_date < cutoff_date
+        }
+    return []
 
 
 def _filter_stale_tickers(
