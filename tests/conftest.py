@@ -34,10 +34,28 @@ def refresh_schedule_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 @pytest.fixture
+def symbol_integrity_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Stub symbol integrity helpers with a mutable state container."""
+    state: dict[str, Any] = {"rows": [], "failure_days": {}}
+
+    def fake_append_symbol_integrity_row(**kwargs: object) -> int:
+        state["rows"].append(kwargs)
+        return len(state["rows"]) - 1
+
+    def fake_get_symbol_failure_days(engine: object, symbol: str, pipeline: str) -> int:
+        return int(state["failure_days"].get((symbol, pipeline), 0))
+
+    monkeypatch.setattr(main, "append_symbol_integrity_row", fake_append_symbol_integrity_row)
+    monkeypatch.setattr(main, "get_symbol_failure_days", fake_get_symbol_failure_days)
+    return state
+
+
+@pytest.fixture
 def download_pipeline_stubs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     refresh_schedule_stub: dict[str, Any],
+    symbol_integrity_stub: dict[str, Any],
 ) -> dict[str, Any]:
     """Stub common download pipeline dependencies and capture dividend dates."""
     dividend_dates: list[date] = []

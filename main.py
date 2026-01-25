@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import sys
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from math import isclose
@@ -24,6 +25,7 @@ from src.config import (
 
 from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
+    append_symbol_integrity_row,
     ensure_schema,
     get_latest_price_date_any,
     get_engine,
@@ -31,6 +33,7 @@ from src.io.database import (
     get_latest_price_date,
     get_price_day_snapshot,
     get_price_refresh_symbols,
+    get_symbol_failure_days,
     get_symbols_with_history,
     get_exchange_codes,
     get_unmatched_open_refreshes,
@@ -128,16 +131,18 @@ def fetch_data(ticker: str) -> dict[str, Any] | None:
     return payload
 
 
-def fetch_prices(ticker: str, start_date: date | None) -> object | None:
-    """Fetch end-of-day prices for a ticker (network I/O happens here).
+@dataclass(frozen=True)
+class PriceFetchResult:
+    """Container for price fetch results."""
 
-    Args:
-        ticker (str): The ticker symbol to fetch.
-        start_date (date | None): Start date for the request, or None for full history.
+    payload: object | None
+    error_code: str | None
+    message: str | None
+    http_status: int | None
 
-    Returns:
-        object | None: Raw provider payload for prices, or None on error.
-    """
+
+def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResult:
+    """Fetch end-of-day prices for a ticker with error details."""
     api_key = os.getenv("EODHD_API_KEY")
     if not api_key:
         raise ValueError("EODHD_API_KEY is not set")
@@ -152,19 +157,60 @@ def fetch_prices(ticker: str, start_date: date | None) -> object | None:
         )
         response.raise_for_status()
         payload = response.json()
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        return PriceFetchResult(
+            payload=None,
+            error_code="http_error",
+            message=str(exc),
+            http_status=status,
+        )
     except requests.RequestException as exc:
-        logger.info("Price API request failed for %s: %s", ticker, exc)
-        return None
+        status = exc.response.status_code if exc.response is not None else None
+        return PriceFetchResult(
+            payload=None,
+            error_code="request_error",
+            message=str(exc),
+            http_status=status,
+        )
     except ValueError as exc:
-        logger.info("Failed to decode price JSON for %s: %s", ticker, exc)
-        return None
+        return PriceFetchResult(
+            payload=None,
+            error_code="decode_error",
+            message=str(exc),
+            http_status=None,
+        )
     if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
-        logger.info("EODHD price error payload for %s: %s", ticker, payload)
-        return None
+        return PriceFetchResult(
+            payload=None,
+            error_code="provider_error",
+            message=str(payload),
+            http_status=None,
+        )
     if not isinstance(payload, (list, dict)):
-        logger.info("EODHD prices response did not return JSON rows for %s", ticker)
-        return None
-    return payload
+        return PriceFetchResult(
+            payload=None,
+            error_code="payload_error",
+            message="Prices response did not return JSON rows",
+            http_status=None,
+        )
+    return PriceFetchResult(payload=payload, error_code=None, message=None, http_status=None)
+
+
+def fetch_prices(ticker: str, start_date: date | None) -> object | None:
+    """Fetch end-of-day prices for a ticker (network I/O happens here).
+
+    Args:
+        ticker (str): The ticker symbol to fetch.
+        start_date (date | None): Start date for the request, or None for full history.
+
+    Returns:
+        object | None: Raw provider payload for prices, or None on error.
+    """
+    result = _fetch_prices_result(ticker, start_date)
+    if result.error_code is not None:
+        logger.info("Price API request failed for %s: %s", ticker, result.message)
+    return result.payload
 
 
 def _fetch_calendar(endpoint: str, label: str, start_date: date, end_date: date) -> object | None:
@@ -571,10 +617,12 @@ def run_download_pipeline(
         logger.info("Starting price refresh pipeline for %d symbols", len(price_candidates))
     price_total = len(price_candidates)
     price_failures = 0
+    price_skipped = 0
     price_no_new = 0
     price_updates = 0
     price_full_history = 0
     price_overlap_refetch = 0
+    price_attempted = 0
     price_iterator = tqdm(
         price_candidates,
         total=price_total,
@@ -588,6 +636,25 @@ def run_download_pipeline(
         if not isinstance(symbol, str) or not symbol:
             logger.warning("Skipping price refresh for invalid symbol entry: %s", candidate)
             continue
+        failure_days = get_symbol_failure_days(engine, symbol, pipeline="prices")
+        if failure_days >= 7:
+            price_skipped += 1
+            logger.warning(
+                "Skipping price refresh for %s after %d failed days",
+                symbol,
+                failure_days,
+            )
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="skipped",
+                error_code="max_failures",
+                message=f"Skipped after {failure_days} failed days",
+            )
+            continue
+        price_attempted += 1
         latest_date = candidate.get("latest_date")
         start_date = latest_date if isinstance(latest_date, date) else None
         db_adjusted: float | None = None
@@ -597,13 +664,35 @@ def run_download_pipeline(
                 start_date = None
         if start_date is None:
             price_full_history += 1
-        price_payload = fetch_prices(symbol, start_date)
-        if price_payload is None:
+        result = _fetch_prices_result(symbol, start_date)
+        if result.payload is None:
             price_failures += 1
-            logger.warning("Skipping price persistence for %s due to fetch error", symbol)
+            logger.warning(
+                "Skipping price persistence for %s due to fetch error: %s",
+                symbol,
+                result.message,
+            )
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="failed",
+                error_code=result.error_code,
+                http_status=result.http_status,
+                message=result.message,
+            )
             continue
+        price_payload = result.payload
         if start_date is not None and isinstance(price_payload, list) and not price_payload:
             price_no_new += 1
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="success",
+            )
             continue
         if start_date is not None:
             payload_adjusted = _payload_adjusted_close_for_date(price_payload, start_date)
@@ -614,14 +703,36 @@ def run_download_pipeline(
                     symbol,
                     start_date,
                 )
-                price_payload = fetch_prices(symbol, None)
-                if price_payload is None:
+                refetch = _fetch_prices_result(symbol, None)
+                if refetch.payload is None:
                     price_failures += 1
-                    logger.warning("Skipping price persistence for %s due to fetch error", symbol)
+                    logger.warning(
+                        "Skipping price persistence for %s due to fetch error: %s",
+                        symbol,
+                        refetch.message,
+                    )
+                    append_symbol_integrity_row(
+                        engine=engine,
+                        symbol=symbol,
+                        pipeline="prices",
+                        retrieval_date=run_retrieval,
+                        status="failed",
+                        error_code=refetch.error_code,
+                        http_status=refetch.http_status,
+                        message=refetch.message,
+                    )
                     continue
+                price_payload = refetch.payload
         if isinstance(price_payload, list):
             if not price_payload:
                 price_no_new += 1
+                append_symbol_integrity_row(
+                    engine=engine,
+                    symbol=symbol,
+                    pipeline="prices",
+                    retrieval_date=run_retrieval,
+                    status="success",
+                )
                 continue
         save_price_payload(data_dir, symbol, price_payload)
         write_prices(
@@ -632,13 +743,22 @@ def run_download_pipeline(
             raw_data=price_payload,
         )
         price_updates += 1
+        append_symbol_integrity_row(
+            engine=engine,
+            symbol=symbol,
+            pipeline="prices",
+            retrieval_date=run_retrieval,
+            status="success",
+        )
     if price_total:
         logger.info(
-            "Price refresh summary: total=%d updated=%d no_new=%d failures=%d full_history=%d overlap_refetch=%d",
+            "Price refresh summary: total=%d attempted=%d updated=%d no_new=%d failures=%d skipped=%d full_history=%d overlap_refetch=%d",
             price_total,
+            price_attempted,
             price_updates,
             price_no_new,
             price_failures,
+            price_skipped,
             price_full_history,
             price_overlap_refetch,
         )

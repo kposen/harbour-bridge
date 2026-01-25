@@ -55,6 +55,7 @@ EXCHANGES_TABLE = "exchanges"
 PRIMARY_LISTING_MAP_TABLE = "primary_listing_map"
 UNIVERSE_TABLE = "universe"
 REFRESH_SCHEDULE_TABLE = "refresh_schedule"
+SYMBOL_INTEGRITY_TABLE = "symbol_integrity"
 EXCHANGE_LIST_COLUMNS = (
     "name",
     "operating_mic",
@@ -334,6 +335,98 @@ def get_price_refresh_symbols(engine: Engine) -> list[str]:
     return list({*financial_symbols, *forex_symbols})
 
 
+def get_symbol_failure_days(engine: Engine, symbol: str, pipeline: str) -> int:
+    """Return the number of failed days since the last success for a symbol/pipeline.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        symbol (str): Symbol to check.
+        pipeline (str): Pipeline label (e.g., "prices").
+
+    Returns:
+        int: Number of distinct failure days since last success.
+    """
+    query = text(
+        f"""
+        WITH last_success AS (
+            SELECT MAX(retrieval_date) AS last_success
+            FROM {SYMBOL_INTEGRITY_TABLE}
+            WHERE symbol = :symbol
+              AND pipeline = :pipeline
+              AND status = 'success'
+        )
+        SELECT COUNT(DISTINCT DATE(retrieval_date)) AS failure_days
+        FROM {SYMBOL_INTEGRITY_TABLE}, last_success
+        WHERE symbol = :symbol
+          AND pipeline = :pipeline
+          AND status = 'failed'
+          AND (
+              last_success.last_success IS NULL
+              OR retrieval_date > last_success.last_success
+          )
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(query, {"symbol": symbol, "pipeline": pipeline}).scalar()
+    try:
+        return int(result) if result is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def append_symbol_integrity_row(
+    engine: Engine,
+    symbol: str,
+    pipeline: str,
+    retrieval_date: datetime,
+    status: str,
+    error_code: str | None = None,
+    http_status: int | None = None,
+    message: str | None = None,
+) -> int:
+    """Append a symbol integrity record and return its assigned index."""
+    insert_sql = text(
+        f"""
+        INSERT INTO {SYMBOL_INTEGRITY_TABLE} (
+            index,
+            symbol,
+            pipeline,
+            retrieval_date,
+            status,
+            error_code,
+            http_status,
+            message
+        )
+        VALUES (
+            :index,
+            :symbol,
+            :pipeline,
+            :retrieval_date,
+            :status,
+            :error_code,
+            :http_status,
+            :message
+        )
+        """
+    )
+    with engine.begin() as conn:
+        next_index = _next_symbol_integrity_index(conn)
+        conn.execute(
+            insert_sql,
+            {
+                "index": next_index,
+                "symbol": symbol,
+                "pipeline": pipeline,
+                "retrieval_date": retrieval_date,
+                "status": status,
+                "error_code": error_code,
+                "http_status": http_status,
+                "message": message,
+            },
+        )
+    return next_index
+
+
 def get_exchange_codes(engine: Engine) -> list[str]:
     """Return the latest exchange codes with complete metadata.
 
@@ -601,6 +694,19 @@ def _postgres_schema_sql() -> str:
         status TEXT NOT NULL,
         PRIMARY KEY (index, pipeline, cause, retrieval_date)
     );
+    CREATE TABLE IF NOT EXISTS symbol_integrity (
+        index INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        pipeline TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL,
+        error_code TEXT NULL,
+        http_status INTEGER NULL,
+        message TEXT NULL,
+        PRIMARY KEY (index, symbol, pipeline, retrieval_date)
+    );
+    CREATE INDEX IF NOT EXISTS IX_symbol_integrity_symbol_pipeline
+        ON symbol_integrity (symbol, pipeline, status, retrieval_date);
     """
 
 
@@ -2716,6 +2822,19 @@ def _next_refresh_index(conn: Connection) -> int:
     """Return the next available refresh schedule index."""
     result = conn.execute(
         text(f"SELECT MAX(index) FROM {REFRESH_SCHEDULE_TABLE}")
+    ).scalar()
+    if result is None:
+        return 0
+    try:
+        return int(result) + 1
+    except (TypeError, ValueError):
+        return 0
+
+
+def _next_symbol_integrity_index(conn: Connection) -> int:
+    """Return the next available symbol integrity index."""
+    result = conn.execute(
+        text(f"SELECT MAX(index) FROM {SYMBOL_INTEGRITY_TABLE}")
     ).scalar()
     if result is None:
         return 0

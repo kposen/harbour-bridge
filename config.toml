@@ -9,4 +9,4 @@ lookahead_days = 3
 refresh_days = 30
 
 [prices]
-max_symbols_for_prices = 10
+max_symbols_for_prices = -1
