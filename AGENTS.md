@@ -22,6 +22,7 @@
 - Configure float comparison tolerances in `config.toml`.
 - Configure calendar lookahead days in `config.toml` (`calendar.lookahead_days`, capped at 30).
 - Configure share universe refresh cadence in `config.toml` (`universe.refresh_days`, default 30).
+- Configure price refresh cap in `config.toml` (`prices.max_symbols_for_prices`, default 10, -1 unlimited).
 - Preflight checks validate DB connectivity and run a write/read/delete round-trip
   on `pipeline_scratch` before download/forecast access.
 

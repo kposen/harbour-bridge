@@ -3,23 +3,33 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import random
 import sys
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
+from math import isclose
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import requests  # type: ignore[import-untyped]
 from sqlalchemy.engine import Engine
 
-from src.config import get_calendar_lookahead_days, get_universe_refresh_days
+from src.config import (
+    get_calendar_lookahead_days,
+    get_database_tolerances,
+    get_max_symbols_for_prices,
+    get_universe_refresh_days,
+)
 
 from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
     ensure_schema,
+    get_latest_price_date_any,
     get_engine,
     get_latest_filing_date,
     get_latest_price_date,
+    get_price_day_snapshot,
+    get_price_refresh_symbols,
     get_symbols_with_history,
     get_exchange_codes,
     get_unmatched_open_refreshes,
@@ -552,44 +562,87 @@ def run_download_pipeline(
     )
     if inserted == 0:
         logger.info("No corporate actions calendar rows inserted")
+    provider = "EODHD"
+    max_price_symbols = get_max_symbols_for_prices()
+    price_candidates = _select_price_refresh_candidates(engine, max_price_symbols)
+    if not price_candidates:
+        logger.info("No symbols selected for price refresh; skipping price update")
+    else:
+        logger.info("Starting price refresh pipeline for %d symbols", len(price_candidates))
+    price_total = len(price_candidates)
+    price_failures = 0
+    price_no_new = 0
+    price_updates = 0
+    price_full_history = 0
+    price_overlap_refetch = 0
+    for candidate in price_candidates:
+        symbol = candidate.get("symbol")
+        if not isinstance(symbol, str) or not symbol:
+            logger.warning("Skipping price refresh for invalid symbol entry: %s", candidate)
+            continue
+        latest_date = candidate.get("latest_date")
+        start_date = latest_date if isinstance(latest_date, date) else None
+        db_adjusted: float | None = None
+        if start_date is not None:
+            row_count, db_adjusted = get_price_day_snapshot(engine, symbol, start_date)
+            if row_count != 1 or db_adjusted is None:
+                start_date = None
+        if start_date is None:
+            price_full_history += 1
+        price_payload = fetch_prices(symbol, start_date)
+        if price_payload is None:
+            price_failures += 1
+            logger.warning("Skipping price persistence for %s due to fetch error", symbol)
+            continue
+        if start_date is not None and isinstance(price_payload, list) and not price_payload:
+            price_no_new += 1
+            continue
+        if start_date is not None:
+            payload_adjusted = _payload_adjusted_close_for_date(price_payload, start_date)
+            if not _prices_match(db_adjusted, payload_adjusted):
+                price_overlap_refetch += 1
+                logger.warning(
+                    "Adjusted close mismatch for %s on %s; fetching full history",
+                    symbol,
+                    start_date,
+                )
+                price_payload = fetch_prices(symbol, None)
+                if price_payload is None:
+                    price_failures += 1
+                    logger.warning("Skipping price persistence for %s due to fetch error", symbol)
+                    continue
+        if isinstance(price_payload, list):
+            if not price_payload:
+                price_no_new += 1
+                continue
+        save_price_payload(data_dir, symbol, price_payload)
+        write_prices(
+            engine=engine,
+            symbol=symbol,
+            provider=provider,
+            retrieval_date=run_retrieval,
+            raw_data=price_payload,
+        )
+        price_updates += 1
+    if price_total:
+        logger.info(
+            "Price refresh summary: total=%d updated=%d no_new=%d failures=%d full_history=%d overlap_refetch=%d",
+            price_total,
+            price_updates,
+            price_no_new,
+            price_failures,
+            price_full_history,
+            price_overlap_refetch,
+        )
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
         logger.info("No tickers scheduled for update; skipping ticker processing")
     else:
         logger.info("Starting download processing for %d tickers", len(tickers_to_process))
         logger.debug("Tickers scheduled for update: %s", tickers_to_process)
-    provider = "EODHD"
     for ticker in tickers_to_process:
         logger.info("Processing ticker: %s", ticker)
         retrieval_date = run_retrieval
-        price_start = _price_start_date(engine, ticker, provider)
-        if price_start is None:
-            logger.debug("No stored price history for %s; fetching full history", ticker)
-        else:
-            logger.debug("Fetching prices for %s starting from %s", ticker, price_start)
-        price_payload = fetch_prices(ticker, price_start)
-        if price_payload is not None:
-            if isinstance(price_payload, list):
-                if not price_payload:
-                    logger.info("No new price data returned for %s", ticker)
-                else:
-                    logger.debug("Received %d price rows for %s", len(price_payload), ticker)
-            elif isinstance(price_payload, dict):
-                logger.debug(
-                    "Received price payload keys for %s: %s",
-                    ticker,
-                    list(price_payload.keys()),
-                )
-            save_price_payload(data_dir, ticker, price_payload)
-            write_prices(
-                engine=engine,
-                symbol=ticker,
-                provider=provider,
-                retrieval_date=retrieval_date,
-                raw_data=price_payload,
-            )
-        else:
-            logger.info("Skipping price persistence for %s due to fetch error", ticker)
         raw_data = fetch_data(ticker)
         if raw_data is None:
             logger.info("Skipping %s due to fetch error", ticker)
@@ -752,6 +805,121 @@ def _due_refresh_records(
         for due_date in [_as_date(record.get("due_date"))]
         if due_date is not None and due_date <= today
     ]
+
+
+def _select_price_refresh_candidates(
+    engine: Engine,
+    max_symbols: int,
+) -> list[dict[str, object]]:
+    """Select symbols for price refresh based on staleness and cap."""
+    symbols = get_price_refresh_symbols(engine)
+    if not symbols:
+        return []
+    latest_by_symbol = {
+        symbol: get_latest_price_date_any(engine, symbol)
+        for symbol in symbols
+    }
+    selected_symbols = _apply_price_refresh_limit(latest_by_symbol, max_symbols)
+    return [
+        {"symbol": symbol, "latest_date": latest_by_symbol.get(symbol)}
+        for symbol in selected_symbols
+    ]
+
+
+def _apply_price_refresh_limit(
+    latest_by_symbol: dict[str, date | None],
+    max_symbols: int,
+) -> list[str]:
+    """Apply the staleness ordering and cap to price refresh symbols."""
+    if max_symbols == -1:
+        return list(latest_by_symbol.keys())
+    if max_symbols <= 0:
+        return []
+    grouped: dict[date | None, list[str]] = {}
+    for symbol, latest_date in latest_by_symbol.items():
+        grouped.setdefault(latest_date, []).append(symbol)
+    sorted_dates = sorted(
+        grouped.keys(),
+        key=lambda item: date.min if item is None else item,
+    )
+    selected: list[str] = []
+    for latest_date in sorted_dates:
+        group = grouped.get(latest_date, [])
+        remaining = max_symbols - len(selected)
+        if remaining <= 0:
+            break
+        if len(group) <= remaining:
+            selected.extend(group)
+        else:
+            selected.extend(random.sample(group, remaining))
+            break
+    return selected
+
+
+def _coerce_price_value(value: object) -> float | None:
+    """Coerce a price value into a float when possible."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _prices_match(db_value: float | None, payload_value: float | None) -> bool:
+    """Compare price values using configured tolerances."""
+    if db_value is None or payload_value is None:
+        return False
+    rel_tol, abs_tol = get_database_tolerances()
+    return isclose(db_value, payload_value, rel_tol=rel_tol, abs_tol=abs_tol)
+
+
+def _coerce_payload_date(value: object) -> date | None:
+    """Coerce a payload date to a date object."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _price_payload_entries(payload: object) -> Iterable[Mapping[str, object]]:
+    """Yield price payload entries."""
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, Mapping)]
+    if isinstance(payload, Mapping):
+        return [entry for entry in payload.values() if isinstance(entry, Mapping)]
+    return []
+
+
+def _payload_adjusted_close_for_date(
+    payload: object,
+    price_date: date,
+) -> float | None:
+    """Return adjusted close from payload for a specific date."""
+    adjusted_keys = ("adjusted_close", "adjustedClose", "adj_close", "adjClose")
+    for entry in _price_payload_entries(payload):
+        entry_date = _coerce_payload_date(entry.get("date"))
+        if entry_date != price_date:
+            continue
+        raw_value = next(
+            (entry.get(key) for key in adjusted_keys if entry.get(key) is not None),
+            None,
+        )
+        return _coerce_price_value(raw_value)
+    return None
 
 
 def _filter_stale_tickers(

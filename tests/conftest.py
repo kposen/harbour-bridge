@@ -49,6 +49,7 @@ def download_pipeline_stubs(
     monkeypatch.setattr(main, "write_exchange_list", lambda **kwargs: 0)
     monkeypatch.setattr(main, "write_corporate_actions_calendar", lambda **kwargs: 0)
     monkeypatch.setattr(main, "get_exchange_codes", lambda engine: [])
+    monkeypatch.setattr(main, "get_price_refresh_symbols", lambda engine: [])
     monkeypatch.setattr(
         main,
         "save_exchanges_list_payload",

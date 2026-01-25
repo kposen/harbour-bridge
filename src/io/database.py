@@ -255,6 +255,85 @@ def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | 
     return _parse_date(result)
 
 
+def get_latest_price_date_any(engine: Engine, symbol: str) -> date | None:
+    """Fetch the most recent price date for a symbol across all providers.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        symbol (str): Ticker symbol to query.
+
+    Returns:
+        date | None: Latest price date or None if missing.
+    """
+    query = text(
+        """
+        SELECT MAX(date) AS latest_date
+        FROM prices
+        WHERE symbol = :symbol
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(query, {"symbol": symbol}).scalar()
+    return _parse_date(result)
+
+
+def get_price_day_snapshot(engine: Engine, symbol: str, price_date: date) -> tuple[int, float | None]:
+    """Return the number of price rows and adjusted close for a symbol/date.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        symbol (str): Ticker symbol to query.
+        price_date (date): Price date to inspect.
+
+    Returns:
+        tuple[int, float | None]: Row count and adjusted close when unique.
+    """
+    query = text(
+        """
+        SELECT adjusted_close
+        FROM prices
+        WHERE symbol = :symbol
+          AND date = :price_date
+        """
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(query, {"symbol": symbol, "price_date": price_date}).all()
+    if len(rows) != 1:
+        return len(rows), None
+    return len(rows), _to_float(rows[0][0])
+
+
+def get_price_refresh_symbols(engine: Engine) -> list[str]:
+    """Return the union of financial facts symbols and FOREX universe symbols.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+
+    Returns:
+        list[str]: Unique symbols eligible for price refresh.
+    """
+    financial_query = text("SELECT DISTINCT symbol FROM financial_facts")
+    forex_query = text(
+        f"""
+        SELECT DISTINCT symbol
+        FROM {UNIVERSE_TABLE}
+        WHERE exchange = 'FOREX'
+        """
+    )
+    with engine.begin() as conn:
+        financial_symbols = [
+            row[0]
+            for row in conn.execute(financial_query).all()
+            if isinstance(row[0], str)
+        ]
+        forex_symbols = [
+            row[0]
+            for row in conn.execute(forex_query).all()
+            if isinstance(row[0], str)
+        ]
+    return list({*financial_symbols, *forex_symbols})
+
+
 def get_exchange_codes(engine: Engine) -> list[str]:
     """Return the latest exchange codes with complete metadata.
 

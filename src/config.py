@@ -12,6 +12,7 @@ DEFAULT_REL_TOL = 1e-4
 DEFAULT_ABS_TOL = 1e-6
 DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 30
 DEFAULT_UNIVERSE_REFRESH_DAYS = 30
+DEFAULT_MAX_SYMBOLS_FOR_PRICES = 10
 
 _CONFIG_CACHE: dict[str, Any] | None = None
 
@@ -77,6 +78,21 @@ def get_universe_refresh_days() -> int:
     config = load_config()
     universe = config.get("universe", {}) if isinstance(config, dict) else {}
     return _coerce_int(universe.get("refresh_days"), DEFAULT_UNIVERSE_REFRESH_DAYS)
+
+
+def get_max_symbols_for_prices() -> int:
+    """Return the maximum number of symbols to refresh prices per run.
+
+    Args:
+        None
+
+    Returns:
+        int: Maximum symbol count (-1 means unlimited).
+    """
+    config = load_config()
+    prices = config.get("prices", {}) if isinstance(config, dict) else {}
+    value = _coerce_int(prices.get("max_symbols_for_prices"), DEFAULT_MAX_SYMBOLS_FOR_PRICES)
+    return value if value >= -1 else DEFAULT_MAX_SYMBOLS_FOR_PRICES
 
 
 def _coerce_float(value: object, default: float) -> float:
