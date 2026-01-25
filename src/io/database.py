@@ -345,25 +345,51 @@ def get_price_refresh_symbols(engine: Engine) -> list[str]:
         list[str]: Unique symbols eligible for price refresh.
     """
     financial_query = text("SELECT DISTINCT symbol FROM financial_facts")
-    forex_query = text(
-        f"""
-        SELECT DISTINCT symbol
-        FROM {UNIVERSE_TABLE}
-        WHERE exchange = 'FOREX'
-        """
-    )
     with engine.begin() as conn:
         financial_symbols = [
             row[0]
             for row in conn.execute(financial_query).all()
             if isinstance(row[0], str)
         ]
-        forex_symbols = [
-            row[0]
-            for row in conn.execute(forex_query).all()
-            if isinstance(row[0], str)
-        ]
+    forex_symbols = get_filtered_universe_symbols(engine, exchange="FOREX")
     return list({*financial_symbols, *forex_symbols})
+
+
+def get_filtered_universe_symbols(engine: Engine, exchange: str | None = None) -> list[str]:
+    """Return universe symbols filtered by type and ISIN eligibility.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        exchange (str | None): Optional exchange filter (e.g., "FOREX").
+
+    Returns:
+        list[str]: Filtered universe symbols.
+    """
+    where_exchange = "AND exchange = :exchange" if exchange is not None else ""
+    query = text(
+        f"""
+        SELECT symbol
+        FROM {UNIVERSE_TABLE}
+        WHERE (symbol, exchange, retrieval_date) IN (
+            SELECT symbol, exchange, MAX(retrieval_date)
+            FROM {UNIVERSE_TABLE}
+            GROUP BY symbol, exchange
+        )
+          AND (
+              UPPER(type) = 'CURRENCY'
+              OR (
+                  UPPER(type) = 'COMMON STOCK'
+                  AND NULLIF(TRIM(isin), '') IS NOT NULL
+              )
+          )
+          {where_exchange}
+        ORDER BY symbol
+        """
+    )
+    params = {"exchange": exchange} if exchange is not None else {}
+    with engine.begin() as conn:
+        rows = conn.execute(query, params).all()
+    return [row[0] for row in rows if isinstance(row[0], str)]
 
 
 def get_symbol_failure_days(engine: Engine, symbol: str, pipeline: str) -> int:
