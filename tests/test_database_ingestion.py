@@ -105,30 +105,12 @@ def test_staleness_logic_with_date_columns() -> None:
     latest = get_latest_filing_date(engine, symbol)
     assert latest == date(2025, 1, 15)
 
-    class FixedDatetime(datetime):
-        """Fixed datetime for staleness testing."""
-
-        @classmethod
-        def now(cls, tz: object | None = None) -> datetime:
-            """Return a fixed datetime for deterministic tests.
-
-            Args:
-                cls (type[FixedDatetime]): Class reference for the method.
-
-            Returns:
-                datetime: Fixed UTC datetime for staleness logic.
-            """
-            if tz is None:
-                return datetime(2025, 5, 1)
-            return datetime(2025, 5, 1, tzinfo=tz)
-
-    original_datetime = main.datetime
-    try:
-        main.datetime = FixedDatetime  # type: ignore[assignment]
-        stale = main._filter_stale_tickers([symbol], engine)
-        assert stale == [symbol]
-    finally:
-        main.datetime = original_datetime
+    stale = main._filter_stale_tickers(
+        [symbol],
+        engine,
+        current_date=date(2025, 5, 1),
+    )
+    assert stale == [symbol]
 
 
 def test_reported_facts_ingestion_net_income_cfs() -> None:

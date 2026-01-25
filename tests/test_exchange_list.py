@@ -12,7 +12,10 @@ from src.io.database import EXCHANGE_LIST_COLUMNS, _exchange_rows
 def _load_exchange_sample() -> list[dict[str, object]]:
     """Load the sample exchanges payload from disk."""
     payload_path = Path(__file__).resolve().parents[1] / "data" / "samples" / "exchanges.json"
-    return json.loads(payload_path.read_text(encoding="utf-8"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("Exchange payload sample is not a list")
+    return [entry for entry in payload if isinstance(entry, dict)]
 
 
 def test_exchange_rows_match_sample_payload() -> None:

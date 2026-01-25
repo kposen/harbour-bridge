@@ -9,7 +9,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Iterable
 
-import requests
+import requests  # type: ignore[import-untyped]
 from sqlalchemy.engine import Engine
 
 from src.config import get_calendar_lookahead_days
@@ -645,7 +645,11 @@ def _build_results_dir(results_root: Path) -> Path:
     return run_dir
 
 
-def _filter_stale_tickers(tickers: list[str], engine: Engine | None) -> list[str]:
+def _filter_stale_tickers(
+    tickers: list[str],
+    engine: Engine | None,
+    current_date: date | None = None,
+) -> list[str]:
     """Filter tickers to those needing updates based on filing date age.
 
     Args:
@@ -661,7 +665,7 @@ def _filter_stale_tickers(tickers: list[str], engine: Engine | None) -> list[str
     if engine is None:
         logger.info("No database configured; skipping staleness check for %d tickers", len(tickers))
         return tickers
-    today = datetime.now(UTC).date()
+    today = current_date or datetime.now(UTC).date()
     cutoff = _months_ago(today, 3)
     logger.debug("Using staleness cutoff date: %s", cutoff)
     should_update = partial(_should_update, engine=engine, cutoff=cutoff)

@@ -22,7 +22,10 @@ def _load_payload() -> dict[str, Any]:
         dict[str, Any]: Parsed JSON payload.
     """
     payload_path = Path(__file__).resolve().parents[1] / "docs" / "sample-payload.txt"
-    return json.loads(payload_path.read_text())
+    payload = json.loads(payload_path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("Sample payload is not a JSON object")
+    return payload
 
 
 def _find_item(history: list[LineItems], period: date) -> LineItems:

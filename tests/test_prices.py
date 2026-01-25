@@ -8,6 +8,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import requests  # type: ignore[import-untyped]
+
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -317,7 +319,7 @@ def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["timeout"] = timeout
         return DummyResponse([])
 
-    monkeypatch.setattr(main.requests, "get", fake_get)
+    monkeypatch.setattr(requests, "get", fake_get)
 
     # Without a start date, we should not include "from".
     payload = main.fetch_prices("AAPL.US", None)

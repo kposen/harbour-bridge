@@ -5,7 +5,7 @@ from functools import partial
 from pathlib import Path
 from typing import Iterable
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from more_itertools import flatten
 
 from src.domain.schemas import FinancialModel, LineItems

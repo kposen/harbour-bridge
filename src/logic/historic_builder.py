@@ -9,7 +9,7 @@ from math import isclose
 from operator import itemgetter
 from typing import Any, Callable, Mapping
 
-from toolz import assoc
+from toolz import assoc  # type: ignore[import-untyped]
 
 import logging
 
@@ -142,10 +142,14 @@ def _normalize_record_list(entries: list[object]) -> list[dict[str, Any]]:
     Returns:
         list[dict[str, Any]]: Records with parsed date fields.
     """
-    return [
-        {**dict(item), "date": _parse_date(dict(item).get("date"))}
-        for item in entries
-    ]
+    normalized: list[dict[str, Any]] = []
+    for item in entries:
+        if not isinstance(item, Mapping):
+            continue
+        record = dict(item)
+        record["date"] = _parse_date(record.get("date"))
+        normalized.append(record)
+    return normalized
 
 
 def _extract_ticker(raw_data: Mapping[str, Any]) -> str | None:

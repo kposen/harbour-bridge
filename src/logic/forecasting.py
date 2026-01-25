@@ -8,8 +8,8 @@ from operator import attrgetter
 from typing import Callable, Iterable, Mapping
 
 from more_itertools import pairwise, tail
-from toolz import pipe
-from toolz.curried import map as cmap
+from toolz import pipe  # type: ignore[import-untyped]
+from toolz.curried import map as cmap  # type: ignore[import-untyped]
 
 from src.domain.schemas import Assumptions, FinancialModel, LineItems
 
@@ -316,7 +316,7 @@ def _forecast_next_year(
 
 
 def _forecast_balance_sheet(
-    prior_balance: dict[str, float | None],
+    prior_balance: Mapping[str, float | None],
     growth: dict[str, float],
     cash_short_term_override: float | None,
     change_in_cash: float | None,
@@ -549,7 +549,7 @@ def _average_growth(values: list[float | None]) -> float | None:
     rates = [
         current / prior - 1
         for prior, current in pairwise(values)
-        if prior not in (None, 0) and current is not None
+        if prior is not None and prior != 0 and current is not None
     ]
     return _average_tail(rates)
 
@@ -567,7 +567,7 @@ def _average_ratio(numerators: list[float | None], denominators: list[float | No
     ratios = [
         numerator / denominator
         for numerator, denominator in zip(numerators, denominators)
-        if numerator is not None and denominator not in (None, 0)
+        if numerator is not None and denominator is not None and denominator != 0
     ]
     return _average_tail(ratios)
 
@@ -588,7 +588,7 @@ def _average_tail(values: Iterable[float], window: int = AVERAGE_WINDOW) -> floa
     return sum(tail_values) / len(tail_values)
 
 
-def _override(source: dict[str, float], key: str, value: float | None, default: float) -> float:
+def _override(source: Mapping[str, float], key: str, value: float | None, default: float) -> float:
     """Use an explicit override when provided, otherwise fall back.
 
     Args:
@@ -697,7 +697,7 @@ def _negate(values: list[float | None]) -> list[float | None]:
 
 
 def _growth_from(
-    prior_balance: dict[str, float | None],
+    prior_balance: Mapping[str, float | None],
     growth: dict[str, float],
 ) -> Callable[[str], float | None]:
     """Curry a balance sheet and growth map into a growth lookup function.
@@ -723,7 +723,7 @@ def _growth_from(
     return grow
 
 
-def _operating_working_capital(balance: dict[str, float | None]) -> float | None:
+def _operating_working_capital(balance: Mapping[str, float | None]) -> float | None:
     """Compute operating working capital from balance sheet lines.
 
     Args:
@@ -741,7 +741,7 @@ def _operating_working_capital(balance: dict[str, float | None]) -> float | None
     return assets - (balance.get("accounts_payable") or 0.0)
 
 
-def _other_current_liabilities(balance: dict[str, float | None]) -> float | None:
+def _other_current_liabilities(balance: Mapping[str, float | None]) -> float | None:
     """Compute current liabilities excluding AP and short-term debt.
 
     Args:
@@ -758,7 +758,7 @@ def _other_current_liabilities(balance: dict[str, float | None]) -> float | None
     return current_liabilities - accounts_payable - debt_short_term
 
 
-def _non_operating_working_capital(balance: dict[str, float | None]) -> float | None:
+def _non_operating_working_capital(balance: Mapping[str, float | None]) -> float | None:
     """Compute non-operating working capital from other current items.
 
     Args:
@@ -775,8 +775,8 @@ def _non_operating_working_capital(balance: dict[str, float | None]) -> float | 
 
 
 def _working_capital_change(
-    prior_balance: dict[str, float | None],
-    current_balance: dict[str, float | None],
+    prior_balance: Mapping[str, float | None],
+    current_balance: Mapping[str, float | None],
 ) -> float | None:
     """Compute operating WC change (negative delta).
 
@@ -795,8 +795,8 @@ def _working_capital_change(
 
 
 def _non_operating_working_capital_change(
-    prior_balance: dict[str, float | None],
-    current_balance: dict[str, float | None],
+    prior_balance: Mapping[str, float | None],
+    current_balance: Mapping[str, float | None],
 ) -> float | None:
     """Compute non-operating WC change (negative delta).
 

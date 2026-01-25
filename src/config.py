@@ -74,15 +74,27 @@ def _coerce_float(value: object, default: float) -> float:
     Returns:
         float: Parsed float or default.
     """
-    try:
-        return float(value) if value is not None else default
-    except (TypeError, ValueError):
+    if value is None:
         return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
 
 
 def _coerce_int(value: object, default: int) -> int:
     """Coerce a value to int with a default fallback."""
-    try:
-        return int(value) if value is not None else default
-    except (TypeError, ValueError):
+    if value is None:
         return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default

@@ -10,7 +10,7 @@ from typing import Iterable, Mapping
 
 from math import isclose
 
-from toolz.itertoolz import mapcat
+from toolz.itertoolz import mapcat  # type: ignore[import-untyped]
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import Connection
 
@@ -278,7 +278,7 @@ def get_exchange_codes(engine: Engine) -> list[str]:
         """
     )
     with engine.begin() as conn:
-        rows = conn.execute(query).mappings().all()
+        rows = [dict(row) for row in conn.execute(query).mappings().all()]
     if not rows:
         logger.info("No exchanges rows available for share universe refresh")
         return []
@@ -293,7 +293,7 @@ def get_exchange_codes(engine: Engine) -> list[str]:
         code
         for item in annotated
         for code in [item["code"]]
-        if code is not None and (not item["missing_fields"] or code == "FOREX")
+        if isinstance(code, str) and (not item["missing_fields"] or code == "FOREX")
     ]
     invalid = [
         {
@@ -1237,7 +1237,7 @@ def _share_universe_rows(
     ]
     missing_code = sum(1 for _, code, _ in normalized if code is None)
     missing_exchange = sum(1 for _, _, exchange in normalized if exchange is None)
-    rows = [
+    rows: list[dict[str, object]] = [
         {
             RETRIEVAL_COLUMN: retrieval_date,
             "symbol": f"{code}.{exchange}",
@@ -1834,7 +1834,7 @@ def _market_metrics_row(
             "Market metrics columns missing from schema (sample): %s",
             sorted(unknown_metrics)[:25],
         )
-    row = {
+    row: dict[str, object] = {
         "symbol": symbol,
         "retrieval_date": retrieval_date,
         **{metric: None for metric in MARKET_METRIC_COLUMNS},
@@ -2546,12 +2546,13 @@ def _filter_versioned_rows(
         existing = conn.execute(query, match_params).mappings().first()
         if existing is None:
             return row
+        existing_row = dict(existing)
         compare_columns = [
             column
             for column in row.keys()
             if column not in match_columns and column != retrieval_column
         ]
-        return None if _rows_equal(existing, row, compare_columns, rel_tol, abs_tol) else row
+        return None if _rows_equal(existing_row, row, compare_columns, rel_tol, abs_tol) else row
 
     return [row for row in map(_row_if_new, rows) if row is not None]
 
