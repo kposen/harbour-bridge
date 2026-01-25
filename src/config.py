@@ -11,6 +11,7 @@ import tomllib
 DEFAULT_REL_TOL = 1e-4
 DEFAULT_ABS_TOL = 1e-6
 DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 30
+DEFAULT_UNIVERSE_REFRESH_DAYS = 30
 
 _CONFIG_CACHE: dict[str, Any] | None = None
 
@@ -62,6 +63,20 @@ def get_calendar_lookahead_days() -> int:
     config = load_config()
     calendar = config.get("calendar", {}) if isinstance(config, dict) else {}
     return _coerce_int(calendar.get("lookahead_days"), DEFAULT_CALENDAR_LOOKAHEAD_DAYS)
+
+
+def get_universe_refresh_days() -> int:
+    """Return the refresh cadence for the share universe.
+
+    Args:
+        None
+
+    Returns:
+        int: Refresh cadence in days.
+    """
+    config = load_config()
+    universe = config.get("universe", {}) if isinstance(config, dict) else {}
+    return _coerce_int(universe.get("refresh_days"), DEFAULT_UNIVERSE_REFRESH_DAYS)
 
 
 def _coerce_float(value: object, default: float) -> float:

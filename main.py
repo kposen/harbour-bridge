@@ -12,7 +12,7 @@ from typing import Any, Iterable
 import requests  # type: ignore[import-untyped]
 from sqlalchemy.engine import Engine
 
-from src.config import get_calendar_lookahead_days
+from src.config import get_calendar_lookahead_days, get_universe_refresh_days
 
 from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
@@ -22,8 +22,10 @@ from src.io.database import (
     get_latest_price_date,
     get_symbols_with_history,
     get_exchange_codes,
+    get_unmatched_open_refreshes,
     load_historic_model_from_db,
     run_database_preflight,
+    append_refresh_schedule_row,
     write_corporate_actions_calendar,
     write_exchange_list,
     write_holders,
@@ -379,11 +381,6 @@ def run_download_pipeline(
         calendar_end,
         calendar_lookahead,
     )
-    exchange_payload = fetch_exchange_list()
-    if exchange_payload is not None:
-        save_exchanges_list_payload(data_dir, exchange_payload)
-    else:
-        logger.info("Skipping exchanges list payload save due to fetch error")
     upcoming_earnings = fetch_upcoming_earnings(calendar_start, calendar_end)
     if upcoming_earnings is not None:
         save_upcoming_earnings_payload(data_dir, upcoming_earnings)
@@ -415,45 +412,137 @@ def run_download_pipeline(
         dividend_nonempty_days,
         dividend_total_entries,
     )
-    exchange_inserted = write_exchange_list(
-        engine=engine,
-        retrieval_date=run_retrieval,
-        payload=exchange_payload,
-    )
-    if exchange_inserted == 0:
-        logger.info("No exchange list rows inserted")
-    exchange_codes = get_exchange_codes(engine)
-    if not exchange_codes:
-        logger.info("No eligible exchanges found; skipping share universe refresh")
-    else:
-        logger.info("Refreshing share universe for %d exchanges", len(exchange_codes))
-        logger.debug(
-            "Exchange codes scheduled for share universe refresh (sample): %s",
-            exchange_codes[:25],
+    refresh_today = run_retrieval.date()
+    unmatched_refreshes = get_unmatched_open_refreshes(engine, pipeline="universe")
+    due_refreshes = _due_refresh_records(unmatched_refreshes, refresh_today)
+    if not unmatched_refreshes:
+        inception_index = append_refresh_schedule_row(
+            engine=engine,
+            open_index=None,
+            pipeline="universe",
+            cause="inception",
+            retrieval_date=run_retrieval,
+            refresh_date=refresh_today,
+            status="opened",
         )
-    share_universe_inserted = 0
-    for exchange_code in exchange_codes:
-        share_payload = fetch_exchange_share_list(exchange_code)
-        if share_payload is not None:
-            save_exchange_shares_payload(data_dir, exchange_code, share_payload)
-            inserted_rows = write_share_universe(
+        due_refreshes = [
+            {"index": inception_index, "pipeline": "universe", "cause": "inception"}
+        ]
+        logger.info("Created inception share universe refresh at index %d", inception_index)
+    if not due_refreshes:
+        logger.info("No share universe refresh scheduled for %s; skipping universe update", refresh_today)
+    else:
+        refresh_ok = True
+        try:
+            exchange_payload = fetch_exchange_list()
+            if exchange_payload is not None:
+                save_exchanges_list_payload(data_dir, exchange_payload)
+            else:
+                refresh_ok = False
+                logger.info("Skipping exchanges list payload save due to fetch error")
+            exchange_inserted = write_exchange_list(
                 engine=engine,
                 retrieval_date=run_retrieval,
-                payload=share_payload,
+                payload=exchange_payload,
             )
-            share_universe_inserted += inserted_rows
-            logger.debug(
-                "Share universe rows inserted for %s: %d",
-                exchange_code,
-                inserted_rows,
-            )
+            if exchange_inserted == 0:
+                logger.info("No exchange list rows inserted")
+            exchange_codes = get_exchange_codes(engine)
+            if not exchange_codes:
+                logger.info("No eligible exchanges found; skipping share universe refresh")
+            else:
+                logger.info("Refreshing share universe for %d exchanges", len(exchange_codes))
+                logger.debug(
+                    "Exchange codes scheduled for share universe refresh (sample): %s",
+                    exchange_codes[:25],
+                )
+            share_universe_inserted = 0
+            for exchange_code in exchange_codes:
+                share_payload = fetch_exchange_share_list(exchange_code)
+                if share_payload is not None:
+                    save_exchange_shares_payload(data_dir, exchange_code, share_payload)
+                    inserted_rows = write_share_universe(
+                        engine=engine,
+                        retrieval_date=run_retrieval,
+                        payload=share_payload,
+                    )
+                    share_universe_inserted += inserted_rows
+                    logger.debug(
+                        "Share universe rows inserted for %s: %d",
+                        exchange_code,
+                        inserted_rows,
+                    )
+                else:
+                    refresh_ok = False
+                    logger.info(
+                        "Skipping share universe persistence for %s due to fetch error",
+                        exchange_code,
+                    )
+            if share_universe_inserted == 0:
+                logger.info("No share universe rows inserted")
+        except Exception as exc:
+            refresh_ok = False
+            logger.exception("Share universe refresh failed: %s", exc)
+        if refresh_ok:
+            refresh_days = get_universe_refresh_days()
+            if refresh_days < 1:
+                logger.warning(
+                    "Share universe refresh cadence of %d days is invalid; using 1",
+                    refresh_days,
+                )
+                refresh_days = 1
+            next_refresh = refresh_today + timedelta(days=refresh_days)
+            for record in due_refreshes:
+                opened_index = record.get("index")
+                pipeline = record.get("pipeline")
+                cause = record.get("cause")
+                try:
+                    opened_index = int(opened_index) if opened_index is not None else None
+                except (TypeError, ValueError):
+                    opened_index = None
+                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
+                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                    continue
+                closed_index = append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=opened_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=None,
+                    status="closed",
+                )
+                append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=closed_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=next_refresh,
+                    status="opened",
+                )
         else:
-            logger.info(
-                "Skipping share universe persistence for %s due to fetch error",
-                exchange_code,
-            )
-    if share_universe_inserted == 0:
-        logger.info("No share universe rows inserted")
+            failed_refresh_date = refresh_today + timedelta(days=1)
+            for record in due_refreshes:
+                opened_index = record.get("index")
+                pipeline = record.get("pipeline")
+                cause = record.get("cause")
+                try:
+                    opened_index = int(opened_index) if opened_index is not None else None
+                except (TypeError, ValueError):
+                    opened_index = None
+                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
+                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                    continue
+                append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=opened_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=failed_refresh_date,
+                    status="failed",
+                )
     inserted = write_corporate_actions_calendar(
         engine=engine,
         retrieval_date=run_retrieval,
@@ -643,6 +732,26 @@ def _build_results_dir(results_root: Path) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Created results directory: %s", run_dir)
     return run_dir
+
+
+def _due_refresh_records(
+    open_records: list[dict[str, object]],
+    today: date,
+) -> list[dict[str, object]]:
+    """Filter refresh schedule records to those due for execution."""
+    def _as_date(value: object) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        return None
+
+    return [
+        record
+        for record in open_records
+        for due_date in [_as_date(record.get("due_date"))]
+        if due_date is not None and due_date <= today
+    ]
 
 
 def _filter_stale_tickers(

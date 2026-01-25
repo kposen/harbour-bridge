@@ -4,3 +4,6 @@ float_abs_tol = 1e-6
 
 [calendar]
 lookahead_days = 3
+
+[universe]
+refresh_days = 30

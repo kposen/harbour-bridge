@@ -54,6 +54,7 @@ SCRATCH_TABLE = "pipeline_scratch"
 EXCHANGES_TABLE = "exchanges"
 PRIMARY_LISTING_MAP_TABLE = "primary_listing_map"
 UNIVERSE_TABLE = "universe"
+REFRESH_SCHEDULE_TABLE = "refresh_schedule"
 EXCHANGE_LIST_COLUMNS = (
     "name",
     "operating_mic",
@@ -511,6 +512,16 @@ def _postgres_schema_sql() -> str:
         new_shares DOUBLE PRECISION NULL,
         PRIMARY KEY (symbol, date, retrieval_date)
     );
+    CREATE TABLE IF NOT EXISTS refresh_schedule (
+        index INTEGER NOT NULL,
+        open_index INTEGER NOT NULL,
+        pipeline TEXT NOT NULL,
+        cause TEXT NOT NULL,
+        retrieval_date TIMESTAMPTZ NOT NULL,
+        refresh_date DATE NULL,
+        status TEXT NOT NULL,
+        PRIMARY KEY (index, pipeline, cause, retrieval_date)
+    );
     """
 
 
@@ -932,6 +943,128 @@ def write_share_universe(
         logger.info("Writing %d share universe rows", len(rows_to_insert))
         conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
+
+
+def get_unmatched_open_refreshes(engine: Engine, pipeline: str) -> list[dict[str, object]]:
+    """Return open refresh schedule records without a matching closed record.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        pipeline (str): Pipeline label (e.g., "universe").
+
+    Returns:
+        list[dict[str, object]]: Unmatched open records with computed due dates.
+    """
+    query = text(
+        f"""
+        SELECT
+            opened.index AS index,
+            opened.open_index AS open_index,
+            opened.pipeline AS pipeline,
+            opened.cause AS cause,
+            opened.retrieval_date AS retrieval_date,
+            opened.refresh_date AS refresh_date,
+            failed.refresh_date AS failed_refresh_date
+        FROM {REFRESH_SCHEDULE_TABLE} AS opened
+        LEFT JOIN LATERAL (
+            SELECT refresh_date
+            FROM {REFRESH_SCHEDULE_TABLE} AS failed
+            WHERE failed.open_index = opened.index
+              AND failed.index > opened.index
+              AND failed.status = 'failed'
+            ORDER BY failed.index DESC
+            LIMIT 1
+        ) AS failed ON TRUE
+        WHERE opened.status = 'opened'
+          AND opened.pipeline = :pipeline
+          AND NOT EXISTS (
+              SELECT 1
+              FROM {REFRESH_SCHEDULE_TABLE} AS closed
+              WHERE closed.open_index = opened.index
+                AND closed.index > opened.index
+                AND closed.status = 'closed'
+          )
+        ORDER BY opened.index
+        """
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(query, {"pipeline": pipeline}).mappings().all()
+    return [
+        {
+            "index": row.get("index"),
+            "open_index": row.get("open_index"),
+            "pipeline": row.get("pipeline"),
+            "cause": row.get("cause"),
+            "retrieval_date": row.get("retrieval_date"),
+            "refresh_date": row.get("refresh_date"),
+            "failed_refresh_date": row.get("failed_refresh_date"),
+            "due_date": row.get("failed_refresh_date") or row.get("refresh_date"),
+        }
+        for row in rows
+    ]
+
+
+def append_refresh_schedule_row(
+    engine: Engine,
+    open_index: int | None,
+    pipeline: str,
+    cause: str,
+    retrieval_date: datetime,
+    refresh_date: date | None,
+    status: str,
+) -> int:
+    """Append a refresh schedule record and return its assigned index.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        open_index (int | None): Index of the opened record that triggered this row.
+        pipeline (str): Pipeline label (e.g., "universe").
+        cause (str): Refresh cause (e.g., "inception", "dividend").
+        retrieval_date (datetime): Retrieval timestamp for this record.
+        refresh_date (date | None): Scheduled refresh date, or None when closed.
+        status (str): Refresh status ("opened", "closed", "failed").
+
+    Returns:
+        int: Index assigned to the new record.
+    """
+    insert_sql = text(
+        f"""
+        INSERT INTO {REFRESH_SCHEDULE_TABLE} (
+            index,
+            open_index,
+            pipeline,
+            cause,
+            retrieval_date,
+            refresh_date,
+            status
+        )
+        VALUES (
+            :index,
+            :open_index,
+            :pipeline,
+            :cause,
+            :retrieval_date,
+            :refresh_date,
+            :status
+        )
+        """
+    )
+    with engine.begin() as conn:
+        next_index = _next_refresh_index(conn)
+        resolved_open_index = next_index if open_index is None else open_index
+        conn.execute(
+            insert_sql,
+            {
+                "index": next_index,
+                "open_index": resolved_open_index,
+                "pipeline": pipeline,
+                "cause": cause,
+                "retrieval_date": retrieval_date,
+                "refresh_date": refresh_date,
+                "status": status,
+            },
+        )
+    return next_index
 
 
 def run_database_preflight(engine: Engine) -> None:
@@ -2499,6 +2632,19 @@ def _normalize_outstanding_block(block: object) -> Iterable[Mapping[str, object]
     if isinstance(block, list):
         return block
     return []
+
+
+def _next_refresh_index(conn: Connection) -> int:
+    """Return the next available refresh schedule index."""
+    result = conn.execute(
+        text(f"SELECT MAX(index) FROM {REFRESH_SCHEDULE_TABLE}")
+    ).scalar()
+    if result is None:
+        return 0
+    try:
+        return int(result) + 1
+    except (TypeError, ValueError):
+        return 0
 
 
 def _filter_versioned_rows(
