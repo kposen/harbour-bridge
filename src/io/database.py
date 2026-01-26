@@ -336,7 +336,7 @@ def get_price_day_snapshot(engine: Engine, symbol: str, price_date: date) -> tup
 
 
 def get_price_refresh_symbols(engine: Engine) -> list[str]:
-    """Return the union of financial facts symbols and FOREX universe symbols.
+    """Return the union of financial facts symbols and filtered FOREX symbols.
 
     Args:
         engine (Engine): SQLAlchemy engine for Postgres.

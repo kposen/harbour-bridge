@@ -14,7 +14,7 @@ from typing import Any, Iterable, Mapping
 
 import requests  # type: ignore[import-untyped]
 from sqlalchemy.engine import Engine
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 from src.config import (
     get_calendar_lookahead_days,
@@ -549,13 +549,9 @@ def run_download_pipeline(
                 refresh_days = 1
             next_refresh = refresh_today + timedelta(days=refresh_days)
             for record in due_refreshes:
-                opened_index = record.get("index")
+                opened_index = _coerce_int(record.get("index"))
                 pipeline = record.get("pipeline")
                 cause = record.get("cause")
-                try:
-                    opened_index = int(opened_index) if opened_index is not None else None
-                except (TypeError, ValueError):
-                    opened_index = None
                 if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
                     logger.warning("Skipping refresh schedule update for invalid record: %s", record)
                     continue
@@ -580,13 +576,9 @@ def run_download_pipeline(
         else:
             failed_refresh_date = refresh_today + timedelta(days=1)
             for record in due_refreshes:
-                opened_index = record.get("index")
+                opened_index = _coerce_int(record.get("index"))
                 pipeline = record.get("pipeline")
                 cause = record.get("cause")
-                try:
-                    opened_index = int(opened_index) if opened_index is not None else None
-                except (TypeError, ValueError):
-                    opened_index = None
                 if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
                     logger.warning("Skipping refresh schedule update for invalid record: %s", record)
                     continue
@@ -937,6 +929,20 @@ def _due_refresh_records(
         for due_date in [_as_date(record.get("due_date"))]
         if due_date is not None and due_date <= today
     ]
+
+
+def _coerce_int(value: object) -> int | None:
+    """Coerce a value to int with a None fallback."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _select_price_refresh_candidates(

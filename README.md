@@ -50,6 +50,9 @@ shell.
   Requires the `psycopg` driver (included in `requirements.txt`).
 - `calendar.lookahead_days`: Optional. Days to fetch corporate action calendars
   (clamped to 1-30 by the pipeline).
+- `universe.refresh_days`: Optional. Share universe refresh cadence in days.
+- `prices.max_symbols_for_prices`: Optional. Max symbols to refresh prices per run
+  (`-1` means unlimited).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 
@@ -81,6 +84,8 @@ against a scratch table named `pipeline_scratch`. Failures abort the run.
 The exchange list is stored in `exchanges` with explicit columns for
 `name`, `operating_mic`, `country`, `currency`, `country_iso2`, and
 `country_iso3`.
+Symbol integrity events are stored in `symbol_integrity` for auditability
+(success, failures, skips).
 
 ## Notes
 

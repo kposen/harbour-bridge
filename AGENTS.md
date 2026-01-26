@@ -49,3 +49,4 @@
 
 ## Agent-Specific Instructions
 - Keep `AGENTS.md` updated as the repository gains structure, tooling, and conventions.
+- Symbol integrity events are tracked in the `symbol_integrity` table.
