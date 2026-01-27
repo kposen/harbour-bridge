@@ -35,6 +35,7 @@ from src.io.database import (
     get_symbol_failure_days,
     get_symbols_with_history,
     get_exchange_codes,
+    get_latest_refresh_retrieval,
     get_unmatched_open_refreshes,
     load_historic_model_from_db,
     run_database_preflight,
@@ -683,200 +684,350 @@ def run_download_pipeline(
     if inserted == 0:
         logger.info("No corporate actions calendar rows inserted")
     provider = "EODHD"
-    bulk_target = _bulk_target_date(run_retrieval)
-    stale_days = get_prices_days_stale()
-    if stale_days < 0:
-        logger.warning("Invalid prices.days_stale=%d; using 0", stale_days)
-        stale_days = 0
-    max_price_symbols = get_max_symbols_for_prices()
-    logger.info("Bulk price target date: %s", bulk_target)
-    exchange_codes = get_exchange_codes(engine)
-    bulk_failures: list[str] = []
-    integrity_skips: list[str] = []
-    dividend_symbols: set[str] = set()
-    split_symbols: set[str] = set()
-    trigger_invalid_symbols: set[str] = set()
-    bulk_dividend_inserts = 0
-    bulk_split_inserts = 0
-    if not exchange_codes:
-        logger.info("No exchanges available for bulk price/dividend/split updates")
-    else:
-        logger.info("Starting bulk dividends/splits download for %d exchanges", len(exchange_codes))
-    for exchange_code in exchange_codes:
-        dividends_result = _fetch_bulk_csv(exchange_code, bulk_target, "dividends")
-        if dividends_result.payload is None:
-            bulk_failures.append(f"dividends:{exchange_code}")
-            logger.warning(
-                "Bulk dividends download failed for %s: %s",
-                exchange_code,
-                dividends_result.message,
-            )
-        else:
-            rows, invalid_map, invalid_unknown = parse_bulk_dividends_csv(
-                dividends_result.payload,
-                run_retrieval,
-            )
-            valid_rows = [
-                row
-                for row in rows
-                for row_date in [row.get("date")]
-                if isinstance(row_date, date) and row_date <= bulk_target
-            ]
-            _record_bulk_invalids("dividends", invalid_map, invalid_unknown, trigger_invalid_symbols)
-            bulk_dividend_inserts += write_bulk_dividends(engine, valid_rows)
-            dividend_symbols.update(
-                row_symbol
-                for row in valid_rows
-                for row_date in [row.get("date")]
-                for row_symbol in [row.get("symbol")]
-                if isinstance(row_date, date)
-                and row_date == bulk_target
-                and isinstance(row_symbol, str)
-            )
-        splits_result = _fetch_bulk_csv(exchange_code, bulk_target, "splits")
-        if splits_result.payload is None:
-            bulk_failures.append(f"splits:{exchange_code}")
-            logger.warning(
-                "Bulk splits download failed for %s: %s",
-                exchange_code,
-                splits_result.message,
-            )
-        else:
-            rows, invalid_map, invalid_unknown = parse_bulk_splits_csv(
-                splits_result.payload,
-                run_retrieval,
-            )
-            valid_rows = [
-                row
-                for row in rows
-                for row_date in [row.get("date")]
-                if isinstance(row_date, date) and row_date <= bulk_target
-            ]
-            _record_bulk_invalids("splits", invalid_map, invalid_unknown, trigger_invalid_symbols)
-            bulk_split_inserts += write_bulk_splits(engine, valid_rows)
-            split_symbols.update(
-                row_symbol
-                for row in valid_rows
-                for row_date in [row.get("date")]
-                for row_symbol in [row.get("symbol")]
-                if isinstance(row_date, date)
-                and row_date == bulk_target
-                and isinstance(row_symbol, str)
-            )
-    trigger_symbols = dividend_symbols | split_symbols | trigger_invalid_symbols
-    full_refresh_symbols = _select_full_refresh_symbols(
-        engine=engine,
-        cutoff_date=bulk_target,
-        stale_days=stale_days,
-        max_symbols=max_price_symbols,
-        trigger_symbols=trigger_symbols,
-    )
-    if not full_refresh_symbols:
-        logger.info("No symbols selected for full price history refresh")
-    else:
+    bulk_unmatched = get_unmatched_open_refreshes(engine, pipeline="bulk")
+    bulk_due = _bulk_due_refresh_records(bulk_unmatched, run_retrieval)
+    if bulk_unmatched:
         logger.info(
-            "Starting full price history refresh for %d symbols",
-            len(full_refresh_symbols),
+            "Bulk refresh schedule: unmatched=%d due=%d",
+            len(bulk_unmatched),
+            len(bulk_due),
         )
-    refresh_summary, attempted_symbols = _run_full_price_refreshes(
-        engine=engine,
-        data_dir=data_dir,
-        run_retrieval=run_retrieval,
-        symbols=full_refresh_symbols,
-        price_cutoff=bulk_target,
-        provider=provider,
-        integrity_skips=integrity_skips,
-    )
-    bulk_price_inserts = 0
-    invalid_price_symbols: set[str] = set()
-    if exchange_codes:
-        logger.info("Starting bulk prices download for %d exchanges", len(exchange_codes))
-    for exchange_code in exchange_codes:
-        prices_result = _fetch_bulk_csv(exchange_code, bulk_target, None)
-        if prices_result.payload is None:
-            bulk_failures.append(f"prices:{exchange_code}")
-            logger.warning(
-                "Bulk prices download failed for %s: %s",
-                exchange_code,
-                prices_result.message,
-            )
-            continue
-        rows, invalid_map, invalid_unknown = parse_bulk_prices_csv(
-            prices_result.payload,
-            run_retrieval,
-            provider,
+    if not bulk_unmatched:
+        inception_index = append_refresh_schedule_row(
+            engine=engine,
+            open_index=None,
+            pipeline="bulk",
+            cause="inception",
+            retrieval_date=run_retrieval,
+            refresh_date=run_retrieval.date(),
+            status="opened",
         )
-        valid_rows = [
-            row
-            for row in rows
-            for row_date in [row.get("date")]
-            if isinstance(row_date, date) and row_date <= bulk_target
-        ]
-        _record_bulk_invalids("prices", invalid_map, invalid_unknown, invalid_price_symbols)
-        bulk_price_inserts += write_bulk_prices(engine, valid_rows)
-    remaining_capacity: int | None
-    if max_price_symbols == -1:
-        remaining_capacity = None
+        bulk_due = [{"index": inception_index, "pipeline": "bulk", "cause": "inception"}]
+        logger.info("Created inception bulk refresh at index %d", inception_index)
+    if not bulk_due:
+        logger.info("No bulk refresh scheduled; skipping bulk price updates")
     else:
-        remaining_capacity = max(max_price_symbols - refresh_summary["attempted"], 0)
-    extra_invalid = [symbol for symbol in invalid_price_symbols if symbol not in attempted_symbols]
-    if extra_invalid:
-        if remaining_capacity == 0:
-            logger.error(
-                "Skipped %d symbols with invalid bulk prices due to cap",
-                len(extra_invalid),
-            )
-        else:
-            logger.info(
-                "Refreshing %d symbols due to invalid bulk prices",
-                len(extra_invalid),
-            )
-            extra_latest: dict[str, date | None] = {symbol: None for symbol in extra_invalid}
-            selected_extra = (
-                extra_invalid
-                if remaining_capacity is None
-                else _apply_price_refresh_limit(extra_latest, remaining_capacity)
-            )
-            extra_summary, extra_attempted = _run_full_price_refreshes(
+        bulk_ok = True
+        bulk_target = _bulk_target_date(run_retrieval)
+        stale_days = get_prices_days_stale()
+        if stale_days < 0:
+            logger.warning("Invalid prices.days_stale=%d; using 0", stale_days)
+            stale_days = 0
+        max_price_symbols = get_max_symbols_for_prices()
+        logger.info("Bulk price target date: %s", bulk_target)
+        logger.info(
+            "Bulk refresh config: prices.days_stale=%d max_symbols_for_prices=%d",
+            stale_days,
+            max_price_symbols,
+        )
+        exchange_codes = get_exchange_codes(engine)
+        bulk_failures: list[str] = []
+        integrity_skips: list[str] = []
+        dividend_symbols: set[str] = set()
+        split_symbols: set[str] = set()
+        trigger_invalid_symbols: set[str] = set()
+        bulk_dividend_inserts = 0
+        bulk_split_inserts = 0
+        bulk_price_inserts = 0
+        refresh_summary = {
+            "total": 0,
+            "attempted": 0,
+            "updated": 0,
+            "failures": 0,
+            "skipped": 0,
+            "empty": 0,
+        }
+        attempted_symbols: set[str] = set()
+        try:
+            if not exchange_codes:
+                logger.info("No exchanges available for bulk price/dividend/split updates")
+            else:
+                logger.info(
+                    "Starting bulk dividends/splits download for %d exchanges",
+                    len(exchange_codes),
+                )
+            for exchange_code in exchange_codes:
+                dividends_result = _fetch_bulk_csv(exchange_code, bulk_target, "dividends")
+                if dividends_result.payload is None:
+                    bulk_failures.append(f"dividends:{exchange_code}")
+                    logger.warning(
+                        "Bulk dividends download failed for %s: %s",
+                        exchange_code,
+                        dividends_result.message,
+                    )
+                else:
+                    rows, invalid_map, invalid_unknown = parse_bulk_dividends_csv(
+                        dividends_result.payload,
+                        run_retrieval,
+                    )
+                    valid_rows = [
+                        row
+                        for row in rows
+                        for row_date in [row.get("date")]
+                        if isinstance(row_date, date) and row_date <= bulk_target
+                    ]
+                    _record_bulk_invalids(
+                        "dividends",
+                        invalid_map,
+                        invalid_unknown,
+                        trigger_invalid_symbols,
+                    )
+                    bulk_dividend_inserts += write_bulk_dividends(engine, valid_rows)
+                    dividend_symbols.update(
+                        row_symbol
+                        for row in valid_rows
+                        for row_date in [row.get("date")]
+                        for row_symbol in [row.get("symbol")]
+                        if isinstance(row_date, date)
+                        and row_date == bulk_target
+                        and isinstance(row_symbol, str)
+                    )
+                splits_result = _fetch_bulk_csv(exchange_code, bulk_target, "splits")
+                if splits_result.payload is None:
+                    bulk_failures.append(f"splits:{exchange_code}")
+                    logger.warning(
+                        "Bulk splits download failed for %s: %s",
+                        exchange_code,
+                        splits_result.message,
+                    )
+                else:
+                    rows, invalid_map, invalid_unknown = parse_bulk_splits_csv(
+                        splits_result.payload,
+                        run_retrieval,
+                    )
+                    valid_rows = [
+                        row
+                        for row in rows
+                        for row_date in [row.get("date")]
+                        if isinstance(row_date, date) and row_date <= bulk_target
+                    ]
+                    _record_bulk_invalids(
+                        "splits",
+                        invalid_map,
+                        invalid_unknown,
+                        trigger_invalid_symbols,
+                    )
+                    bulk_split_inserts += write_bulk_splits(engine, valid_rows)
+                    split_symbols.update(
+                        row_symbol
+                        for row in valid_rows
+                        for row_date in [row.get("date")]
+                        for row_symbol in [row.get("symbol")]
+                        if isinstance(row_date, date)
+                        and row_date == bulk_target
+                        and isinstance(row_symbol, str)
+                    )
+            last_closed = get_latest_refresh_retrieval(engine, pipeline="bulk", status="closed")
+            full_refresh_all = False
+            if last_closed is None:
+                full_refresh_all = True
+                logger.warning("Bulk refresh history missing; full refresh required")
+            else:
+                last_target = _bulk_target_date(last_closed)
+                stale_cutoff = bulk_target - timedelta(days=stale_days)
+                if last_target < stale_cutoff:
+                    full_refresh_all = True
+                    logger.warning(
+                        "Bulk refresh stale: last_target=%s stale_cutoff=%s",
+                        last_target,
+                        stale_cutoff,
+                    )
+            trigger_symbols = dividend_symbols | split_symbols | trigger_invalid_symbols
+            if full_refresh_all:
+                logger.warning(
+                    "Bulk refresh stale or missing history; running full refresh for all symbols",
+                )
+                status_rows = get_filtered_universe_price_status(engine, bulk_target)
+                latest_by_symbol: dict[str, date | None] = {}
+                for row in status_rows:
+                    symbol = row.get("symbol")
+                    latest = row.get("latest_date")
+                    if isinstance(symbol, str):
+                        latest_by_symbol[symbol] = latest if isinstance(latest, date) else None
+                for symbol in trigger_symbols:
+                    latest_by_symbol.setdefault(symbol, None)
+                full_refresh_symbols = _apply_price_refresh_limit(
+                    latest_by_symbol,
+                    max_price_symbols,
+                )
+            else:
+                full_refresh_symbols = _select_full_refresh_symbols(
+                    engine=engine,
+                    cutoff_date=bulk_target,
+                    stale_days=stale_days,
+                    max_symbols=max_price_symbols,
+                    trigger_symbols=trigger_symbols,
+                )
+            if not full_refresh_symbols:
+                logger.info("No symbols selected for full price history refresh")
+            else:
+                logger.info(
+                    "Starting full price history refresh for %d symbols",
+                    len(full_refresh_symbols),
+                )
+            refresh_summary, attempted_symbols = _run_full_price_refreshes(
                 engine=engine,
                 data_dir=data_dir,
                 run_retrieval=run_retrieval,
-                symbols=selected_extra,
+                symbols=full_refresh_symbols,
                 price_cutoff=bulk_target,
                 provider=provider,
                 integrity_skips=integrity_skips,
             )
-            attempted_symbols.update(extra_attempted)
-            for key in refresh_summary:
-                refresh_summary[key] += extra_summary.get(key, 0)
-    if refresh_summary["total"]:
-        logger.info(
-            "Full price refresh summary: total=%d attempted=%d updated=%d failures=%d skipped=%d empty=%d",
-            refresh_summary["total"],
-            refresh_summary["attempted"],
-            refresh_summary["updated"],
-            refresh_summary["failures"],
-            refresh_summary["skipped"],
-            refresh_summary["empty"],
-        )
-    if bulk_dividend_inserts or bulk_split_inserts or bulk_price_inserts:
-        logger.info(
-            "Bulk inserts: dividends=%d splits=%d prices=%d",
-            bulk_dividend_inserts,
-            bulk_split_inserts,
-            bulk_price_inserts,
-        )
-    if bulk_failures:
-        logger.error("Bulk download failures: %s", ", ".join(bulk_failures))
-    if integrity_skips:
-        sample = ", ".join(integrity_skips[:25])
-        suffix = " (truncated)" if len(integrity_skips) > 25 else ""
-        logger.error(
-            "Symbol integrity skips (>=7 failed days): %d symbols: %s%s",
-            len(integrity_skips),
-            sample,
-            suffix,
-        )
+            invalid_price_symbols: set[str] = set()
+            if exchange_codes:
+                logger.info("Starting bulk prices download for %d exchanges", len(exchange_codes))
+            for exchange_code in exchange_codes:
+                prices_result = _fetch_bulk_csv(exchange_code, bulk_target, None)
+                if prices_result.payload is None:
+                    bulk_failures.append(f"prices:{exchange_code}")
+                    logger.warning(
+                        "Bulk prices download failed for %s: %s",
+                        exchange_code,
+                        prices_result.message,
+                    )
+                    continue
+                rows, invalid_map, invalid_unknown = parse_bulk_prices_csv(
+                    prices_result.payload,
+                    run_retrieval,
+                    provider,
+                )
+                valid_rows = [
+                    row
+                    for row in rows
+                    for row_date in [row.get("date")]
+                    if isinstance(row_date, date) and row_date <= bulk_target
+                ]
+                _record_bulk_invalids(
+                    "prices",
+                    invalid_map,
+                    invalid_unknown,
+                    invalid_price_symbols,
+                )
+                bulk_price_inserts += write_bulk_prices(engine, valid_rows)
+            remaining_capacity: int | None
+            if max_price_symbols == -1:
+                remaining_capacity = None
+            else:
+                remaining_capacity = max(max_price_symbols - refresh_summary["attempted"], 0)
+            extra_invalid = [
+                symbol
+                for symbol in invalid_price_symbols
+                if symbol not in attempted_symbols
+            ]
+            if extra_invalid:
+                if remaining_capacity == 0:
+                    logger.error(
+                        "Skipped %d symbols with invalid bulk prices due to cap",
+                        len(extra_invalid),
+                    )
+                else:
+                    logger.info(
+                        "Refreshing %d symbols due to invalid bulk prices",
+                        len(extra_invalid),
+                    )
+                    extra_latest: dict[str, date | None] = {
+                        symbol: None for symbol in extra_invalid
+                    }
+                    selected_extra = (
+                        extra_invalid
+                        if remaining_capacity is None
+                        else _apply_price_refresh_limit(extra_latest, remaining_capacity)
+                    )
+                    extra_summary, extra_attempted = _run_full_price_refreshes(
+                        engine=engine,
+                        data_dir=data_dir,
+                        run_retrieval=run_retrieval,
+                        symbols=selected_extra,
+                        price_cutoff=bulk_target,
+                        provider=provider,
+                        integrity_skips=integrity_skips,
+                    )
+                    attempted_symbols.update(extra_attempted)
+                    for key in refresh_summary:
+                        refresh_summary[key] += extra_summary.get(key, 0)
+            if refresh_summary["total"]:
+                logger.info(
+                    "Full price refresh summary: total=%d attempted=%d updated=%d failures=%d skipped=%d empty=%d",
+                    refresh_summary["total"],
+                    refresh_summary["attempted"],
+                    refresh_summary["updated"],
+                    refresh_summary["failures"],
+                    refresh_summary["skipped"],
+                    refresh_summary["empty"],
+                )
+            if bulk_dividend_inserts or bulk_split_inserts or bulk_price_inserts:
+                logger.info(
+                    "Bulk inserts: dividends=%d splits=%d prices=%d",
+                    bulk_dividend_inserts,
+                    bulk_split_inserts,
+                    bulk_price_inserts,
+                )
+            if bulk_failures:
+                logger.error("Bulk download failures: %s", ", ".join(bulk_failures))
+            if integrity_skips:
+                sample = ", ".join(integrity_skips[:25])
+                suffix = " (truncated)" if len(integrity_skips) > 25 else ""
+                logger.error(
+                    "Symbol integrity skips (>=7 failed days): %d symbols: %s%s",
+                    len(integrity_skips),
+                    sample,
+                    suffix,
+                )
+            if bulk_failures:
+                bulk_ok = False
+            if full_refresh_all and refresh_summary["failures"] > 0:
+                bulk_ok = False
+        except Exception as exc:
+            bulk_ok = False
+            logger.exception("Bulk price refresh failed: %s", exc)
+        if bulk_ok:
+            next_refresh = _next_bulk_cutoff_date(run_retrieval)
+            logger.info("Scheduling next bulk refresh for %s", next_refresh)
+            for record in bulk_due:
+                opened_index = _coerce_int(record.get("index"))
+                pipeline = record.get("pipeline")
+                cause = record.get("cause")
+                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
+                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                    continue
+                closed_index = append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=opened_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=None,
+                    status="closed",
+                )
+                append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=closed_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=next_refresh,
+                    status="opened",
+                )
+        else:
+            failed_refresh_date = run_retrieval.date()
+            logger.warning("Bulk refresh failed; scheduling retry for %s", failed_refresh_date)
+            for record in bulk_due:
+                opened_index = _coerce_int(record.get("index"))
+                pipeline = record.get("pipeline")
+                cause = record.get("cause")
+                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
+                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                    continue
+                append_refresh_schedule_row(
+                    engine=engine,
+                    open_index=opened_index,
+                    pipeline=pipeline,
+                    cause=cause,
+                    retrieval_date=run_retrieval,
+                    refresh_date=failed_refresh_date,
+                    status="failed",
+                )
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
         logger.info("No tickers scheduled for update; skipping ticker processing")
@@ -1074,6 +1225,54 @@ def _bulk_target_date(run_retrieval: datetime) -> date:
     if retrieval_utc.time() >= cutoff:
         return retrieval_utc.date() - timedelta(days=1)
     return retrieval_utc.date() - timedelta(days=2)
+
+
+def _next_bulk_cutoff_date(run_retrieval: datetime) -> date:
+    """Return the next bulk cutoff date based on the 10:00 UTC cutoff."""
+    retrieval = run_retrieval
+    if retrieval.tzinfo is None:
+        retrieval = retrieval.replace(tzinfo=UTC)
+    retrieval_utc = retrieval.astimezone(UTC)
+    cutoff = time(10, 0)
+    if retrieval_utc.time() >= cutoff:
+        return retrieval_utc.date() + timedelta(days=1)
+    return retrieval_utc.date()
+
+
+def _bulk_due_refresh_records(
+    open_records: list[dict[str, object]],
+    run_retrieval: datetime,
+) -> list[dict[str, object]]:
+    """Return bulk refresh schedule records that are due based on cutoff rules."""
+    def _as_date(value: object) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        return None
+
+    retrieval = run_retrieval
+    if retrieval.tzinfo is None:
+        retrieval = retrieval.replace(tzinfo=UTC)
+    retrieval_utc = retrieval.astimezone(UTC)
+    today = retrieval_utc.date()
+    now_time = retrieval_utc.time()
+    cutoff = time(10, 0)
+    due: list[dict[str, object]] = []
+    for record in open_records:
+        failed_date = _as_date(record.get("failed_refresh_date"))
+        if failed_date is not None:
+            if failed_date <= today:
+                due.append(record)
+            continue
+        refresh_date = _as_date(record.get("refresh_date"))
+        if refresh_date is None:
+            continue
+        if refresh_date < today:
+            due.append(record)
+        elif refresh_date == today and now_time >= cutoff:
+            due.append(record)
+    return due
 
 
 def _record_bulk_invalids(

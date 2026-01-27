@@ -4,7 +4,7 @@ import csv
 import json
 import logging
 from collections import Counter
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from functools import partial
 from io import StringIO
 from itertools import chain
@@ -1564,6 +1564,29 @@ def get_unmatched_open_refreshes(engine: Engine, pipeline: str) -> list[dict[str
         }
         for row in rows
     ]
+
+
+def get_latest_refresh_retrieval(
+    engine: Engine,
+    pipeline: str,
+    status: str | None = None,
+) -> datetime | None:
+    """Return the latest refresh retrieval timestamp for a pipeline/status."""
+    status_clause = "AND status = :status" if status is not None else ""
+    query = text(
+        f"""
+        SELECT MAX(retrieval_date) AS latest_retrieval
+        FROM {REFRESH_SCHEDULE_TABLE}
+        WHERE pipeline = :pipeline
+        {status_clause}
+        """
+    )
+    params: dict[str, object] = {"pipeline": pipeline}
+    if status is not None:
+        params["status"] = status
+    with engine.begin() as conn:
+        result = conn.execute(query, params).scalar()
+    return _parse_datetime(result)
 
 
 def append_refresh_schedule_row(
@@ -3548,4 +3571,23 @@ def _parse_date(value: object) -> date | None:
                 return datetime.fromisoformat(normalized).date()
             except ValueError:
                 return None
+    return None
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    """Parse a datetime from ISO string values."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min, tzinfo=UTC)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        normalized = stripped[:-1] + "+00:00" if stripped.endswith("Z") else stripped
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     return None

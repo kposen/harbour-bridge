@@ -17,7 +17,10 @@ import main  # noqa: E402
 @pytest.fixture
 def refresh_schedule_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Stub refresh schedule helpers with a mutable state container."""
-    state: dict[str, Any] = {"next_index": 0, "unmatched": []}
+    state: dict[str, Any] = {
+        "next_index": 0,
+        "unmatched": {"universe": [], "bulk": []},
+    }
 
     def fake_append_refresh_schedule_row(**kwargs: object) -> int:
         index = int(state["next_index"])
@@ -27,7 +30,7 @@ def refresh_schedule_stub(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(
         main,
         "get_unmatched_open_refreshes",
-        lambda *args, **kwargs: state["unmatched"],
+        lambda _engine, pipeline: state["unmatched"].get(pipeline, []),
     )
     monkeypatch.setattr(main, "append_refresh_schedule_row", fake_append_refresh_schedule_row)
     return state
@@ -69,6 +72,17 @@ def download_pipeline_stubs(
     monkeypatch.setattr(main, "get_exchange_codes", lambda engine: [])
     monkeypatch.setattr(main, "get_filtered_universe_price_status", lambda engine, cutoff: [])
     monkeypatch.setattr(main, "get_latest_price_date_before", lambda engine, symbol, cutoff: None)
+    monkeypatch.setattr(main, "get_latest_refresh_retrieval", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        main,
+        "_fetch_bulk_csv",
+        lambda *args, **kwargs: main.BulkFetchResult(
+            payload="",
+            error_code=None,
+            message=None,
+            http_status=None,
+        ),
+    )
     monkeypatch.setattr(
         main,
         "save_exchanges_list_payload",
