@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import os
 import random
@@ -142,6 +143,7 @@ class PriceFetchResult:
     """Container for price fetch results."""
 
     payload: object | None
+    raw_text: str | None
     error_code: str | None
     message: str | None
     http_status: int | None
@@ -157,12 +159,40 @@ class BulkFetchResult:
     http_status: int | None
 
 
+def _parse_prices_csv(payload_text: str) -> list[dict[str, object]]:
+    """Parse CSV price payloads into normalized rows."""
+    if not payload_text.strip():
+        return []
+    reader = csv.DictReader(payload_text.splitlines())
+    rows: list[dict[str, object]] = []
+    for entry in reader:
+        if not isinstance(entry, dict):
+            continue
+        date_value = entry.get("Date") or entry.get("date")
+        if date_value is None or not str(date_value).strip():
+            continue
+        rows.append(
+            {
+                "date": str(date_value).strip(),
+                "open": entry.get("Open") or entry.get("open"),
+                "high": entry.get("High") or entry.get("high"),
+                "low": entry.get("Low") or entry.get("low"),
+                "close": entry.get("Close") or entry.get("close"),
+                "adjusted_close": entry.get("Adjusted_close")
+                or entry.get("Adjusted Close")
+                or entry.get("adjusted_close"),
+                "volume": entry.get("Volume") or entry.get("volume"),
+            }
+        )
+    return rows
+
+
 def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResult:
     """Fetch end-of-day prices for a ticker with error details."""
     api_key = os.getenv("EODHD_API_KEY")
     if not api_key:
         raise ValueError("EODHD_API_KEY is not set")
-    params: dict[str, str] = {"api_token": api_key, "fmt": "json"}
+    params: dict[str, str] = {"api_token": api_key, "fmt": "csv"}
     if start_date is not None:
         params["from"] = start_date.isoformat()
     try:
@@ -172,11 +202,12 @@ def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResu
             timeout=30,
         )
         response.raise_for_status()
-        payload = response.json()
+        text_payload = response.text
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else None
         return PriceFetchResult(
             payload=None,
+            raw_text=None,
             error_code="http_error",
             message=str(exc),
             http_status=status,
@@ -185,6 +216,7 @@ def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResu
         status = exc.response.status_code if exc.response is not None else None
         return PriceFetchResult(
             payload=None,
+            raw_text=None,
             error_code="request_error",
             message=str(exc),
             http_status=status,
@@ -192,25 +224,62 @@ def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResu
     except ValueError as exc:
         return PriceFetchResult(
             payload=None,
+            raw_text=None,
             error_code="decode_error",
             message=str(exc),
             http_status=None,
         )
-    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+    if text_payload is None:
         return PriceFetchResult(
             payload=None,
-            error_code="provider_error",
-            message=str(payload),
+            raw_text=text_payload,
+            error_code="payload_error",
+            message="Prices response did not return CSV payload",
             http_status=None,
         )
-    if not isinstance(payload, (list, dict)):
+    trimmed = text_payload.lstrip()
+    if trimmed.startswith("{") or trimmed.startswith("["):
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            return PriceFetchResult(
+                payload=None,
+                raw_text=text_payload,
+                error_code="decode_error",
+                message=str(exc),
+                http_status=None,
+            )
+        if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+            return PriceFetchResult(
+                payload=None,
+                raw_text=text_payload,
+                error_code="provider_error",
+                message=str(payload),
+                http_status=None,
+            )
+        if isinstance(payload, (list, dict)):
+            return PriceFetchResult(
+                payload=payload,
+                raw_text=text_payload,
+                error_code=None,
+                message=None,
+                http_status=None,
+            )
         return PriceFetchResult(
             payload=None,
+            raw_text=text_payload,
             error_code="payload_error",
             message="Prices response did not return JSON rows",
             http_status=None,
         )
-    return PriceFetchResult(payload=payload, error_code=None, message=None, http_status=None)
+    payload = _parse_prices_csv(text_payload)
+    return PriceFetchResult(
+        payload=payload,
+        raw_text=text_payload,
+        error_code=None,
+        message=None,
+        http_status=None,
+    )
 
 
 def fetch_prices(ticker: str, start_date: date | None) -> object | None:
@@ -1458,7 +1527,7 @@ def _run_full_price_refreshes(
                 message="Empty payload after cutoff filter",
             )
             continue
-        save_price_payload(data_dir, symbol, price_payload)
+        save_price_payload(data_dir, symbol, result.raw_text or price_payload)
         inserted = write_prices(
             engine=engine,
             symbol=symbol,

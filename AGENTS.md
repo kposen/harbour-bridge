@@ -5,7 +5,7 @@
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
 - Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
-- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`, `*.prices.json`,
+- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`, `*.prices.csv`,
   `upcoming-earnings.json`, `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`,
   `exchanges-list.json`, and `shares.<EXCHANGE>.json`.
 - Normalized JSON models are stored under `data/<TICKER>.json`.

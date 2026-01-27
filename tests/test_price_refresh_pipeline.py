@@ -85,7 +85,13 @@ def test_full_price_refresh_records_failure_on_empty_payload(
     symbol = "EMPTY.US"
 
     def fake_fetch_prices(ticker: str, start_date: date | None) -> main.PriceFetchResult:
-        return main.PriceFetchResult(payload=[], error_code=None, message=None, http_status=None)
+        return main.PriceFetchResult(
+            payload=[],
+            raw_text="Date,Open,High,Low,Close,Adjusted_close,Volume\n",
+            error_code=None,
+            message=None,
+            http_status=None,
+        )
 
     monkeypatch.setattr(main, "_fetch_prices_result", fake_fetch_prices)
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: tmp_path / "price.json")
@@ -121,7 +127,13 @@ def test_full_price_refresh_skips_after_failed_days(
     monkeypatch.setattr(
         main,
         "_fetch_prices_result",
-        lambda *args, **kwargs: main.PriceFetchResult(payload=[], error_code=None, message=None, http_status=None),
+        lambda *args, **kwargs: main.PriceFetchResult(
+            payload=[],
+            raw_text="Date,Open,High,Low,Close,Adjusted_close,Volume\n",
+            error_code=None,
+            message=None,
+            http_status=None,
+        ),
     )
     monkeypatch.setattr(main, "save_price_payload", lambda *args, **kwargs: tmp_path / "price.json")
     monkeypatch.setattr(main, "write_prices", lambda **kwargs: 0)

@@ -109,10 +109,19 @@ def save_price_payload(run_dir: Path, ticker: str, payload: object) -> Path:
         payload (object): Raw provider payload for prices.
 
     Returns:
-        Path: Path to the saved JSON payload.
+        Path: Path to the saved CSV payload.
     """
     normalized = _normalize_ticker(ticker)
-    path = run_dir / f"{normalized}.prices.json"
+    path = run_dir / f"{normalized}.prices.csv"
+    if isinstance(payload, str):
+        path.write_text(payload, encoding="utf-8")
+        logger.debug("Saved price payload to %s", path)
+        return path
+    logger.warning(
+        "Price payload for %s is not raw CSV text; writing JSON to %s",
+        ticker,
+        path,
+    )
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug("Saved price payload to %s", path)
     return path

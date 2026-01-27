@@ -62,7 +62,7 @@ shell.
 
 1. **Download**: `download` fetches fundamentals, prices, calendars, and exchange lists.
 2. **Persist raw payloads**: Stored under `data/<timestamp>` for each run, including
-   `*.fundamentals.json`, `*.prices.json`, `upcoming-earnings.json`,
+   `*.fundamentals.json`, `*.prices.csv`, `upcoming-earnings.json`,
    `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`, and
    `exchanges-list.json`.
 3. **Database**: Reported facts and price history are written to Postgres.

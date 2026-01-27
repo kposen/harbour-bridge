@@ -271,16 +271,18 @@ def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
     class DummyResponse:
         """Lightweight response stub for request mocking."""
 
-        def __init__(self, payload: object) -> None:
+        def __init__(self, text_payload: str, json_payload: object | None = None) -> None:
             """Create a dummy response wrapper.
 
             Args:
-                payload (object): Payload to return from json().
+                text_payload (str): Payload to return from text.
+                json_payload (object | None): Optional JSON payload.
 
             Returns:
                 None
             """
-            self._payload = payload
+            self.text = text_payload
+            self._payload = json_payload
 
         def raise_for_status(self) -> None:
             """No-op status check for the dummy response.
@@ -301,6 +303,8 @@ def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
             Returns:
                 object: Payload for the response.
             """
+            if self._payload is None:
+                raise ValueError("No JSON payload")
             return self._payload
 
     def fake_get(url: str, params: dict[str, str], timeout: int) -> DummyResponse:
@@ -317,7 +321,7 @@ def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["url"] = url
         captured["params"] = dict(params)
         captured["timeout"] = timeout
-        return DummyResponse([])
+        return DummyResponse("Date,Open,High,Low,Close,Adjusted_close,Volume\n")
 
     monkeypatch.setattr(requests, "get", fake_get)
 
@@ -325,12 +329,14 @@ def test_fetch_prices_uses_from_param(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = main.fetch_prices("AAPL.US", None)
     assert payload == []
     assert "from" not in captured["params"]
+    assert captured["params"].get("fmt") == "csv"
 
     # With a start date, include "from".
     start = date(2025, 1, 15)
     payload = main.fetch_prices("AAPL.US", start)
     assert payload == []
     assert captured["params"].get("from") == "2025-01-15"
+    assert captured["params"].get("fmt") == "csv"
 
 
 def test_save_price_payload_writes_expected_file(tmp_path: Path) -> None:
@@ -342,7 +348,20 @@ def test_save_price_payload_writes_expected_file(tmp_path: Path) -> None:
     Returns:
         None: Assertions validate filesystem writes.
     """
-    payload = [_price_entry("2025-01-01")]
+    payload = "Date,Open,High,Low,Close,Adjusted_close,Volume\n2025-01-01,1,2,0.5,1.5,1.4,100\n"
     path = save_price_payload(tmp_path, "AAPL.US", payload)
-    assert path.name == "AAPL.US.prices.json"
+    assert path.name == "AAPL.US.prices.csv"
     assert path.exists()
+
+
+def test_parse_prices_csv_sample() -> None:
+    """CSV price payloads should parse into normalized rows."""
+    sample_path = Path(__file__).resolve().parents[1] / "data" / "samples" / "MCD.US.prices.csv"
+    csv_text = sample_path.read_text(encoding="utf-8")
+
+    rows = main._parse_prices_csv(csv_text)
+
+    assert rows
+    first = rows[0]
+    assert first.get("date") == "1966-07-05"
+    assert "adjusted_close" in first
