@@ -1742,13 +1742,31 @@ def write_corporate_actions_calendar(
     Returns:
         int: Number of inserted rows.
     """
-    earnings_rows = list(_iter_earnings_calendar_rows(retrieval_date, earnings_payload))
-    splits_rows = list(_iter_split_calendar_rows(retrieval_date, splits_payload))
-    dividends_rows = [
+    earnings_rows_raw = list(_iter_earnings_calendar_rows(retrieval_date, earnings_payload))
+    splits_rows_raw = list(_iter_split_calendar_rows(retrieval_date, splits_payload))
+    dividends_rows_raw = [
         row
         for payload in dividends_payloads
         for row in _iter_dividend_calendar_rows(retrieval_date, payload)
     ]
+    earnings_rows, earnings_dupes = _dedupe_calendar_rows(
+        earnings_rows_raw,
+        ("symbol", "date", RETRIEVAL_COLUMN),
+    )
+    splits_rows, splits_dupes = _dedupe_calendar_rows(
+        splits_rows_raw,
+        ("symbol", "date", RETRIEVAL_COLUMN),
+    )
+    dividends_rows, dividends_dupes = _dedupe_calendar_rows(
+        dividends_rows_raw,
+        ("symbol", "date", RETRIEVAL_COLUMN),
+    )
+    if earnings_dupes:
+        logger.warning("Removed %d duplicate earnings calendar rows", earnings_dupes)
+    if splits_dupes:
+        logger.warning("Removed %d duplicate splits calendar rows", splits_dupes)
+    if dividends_dupes:
+        logger.warning("Removed %d duplicate dividends calendar rows", dividends_dupes)
     logger.debug(
         "Prepared corporate actions rows: earnings=%d splits=%d dividends=%d",
         len(earnings_rows),
@@ -3299,6 +3317,26 @@ def _filter_versioned_rows(
         return None if _rows_equal(existing_row, row, compare_columns, rel_tol, abs_tol) else row
 
     return [row for row in map(_row_if_new, rows) if row is not None]
+
+
+def _dedupe_calendar_rows(
+    rows: list[dict[str, object]],
+    key_columns: tuple[str, ...],
+) -> tuple[list[dict[str, object]], int]:
+    """Drop duplicate calendar rows based on identity columns."""
+    if not rows:
+        return [], 0
+    seen: set[tuple[object, ...]] = set()
+    deduped: list[dict[str, object]] = []
+    removed = 0
+    for row in rows:
+        key = tuple(row.get(column) for column in key_columns)
+        if key in seen:
+            removed += 1
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped, removed
 
 
 def _rows_equal(
