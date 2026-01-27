@@ -1,60 +1,50 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
 import os
-import random
 import sys
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
-from math import isclose
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from math import isclose
+from typing import Any, Callable, Iterable, Mapping
 
-import requests  # type: ignore[import-untyped]
+import requests
+from tqdm import tqdm
 from sqlalchemy.engine import Engine
-from tqdm import tqdm  # type: ignore[import-untyped]
-
 from src.config import (
     get_calendar_lookahead_days,
     get_database_tolerances,
-    get_max_symbols_for_prices,
-    get_prices_days_stale,
     get_universe_refresh_days,
 )
 
 from src.domain.schemas import Assumptions, FinancialModel
 from src.io.database import (
-    append_symbol_integrity_row,
     ensure_schema,
     get_engine,
     get_latest_filing_date,
-    get_latest_price_date_before,
-    get_filtered_universe_price_status,
-    get_symbol_failure_days,
+    get_latest_price_date,
+    get_price_day_snapshot,
     get_symbols_with_history,
+    get_filtered_universe_symbols,
     get_exchange_codes,
-    get_latest_refresh_retrieval,
     get_unmatched_open_refreshes,
     load_historic_model_from_db,
     run_database_preflight,
     append_refresh_schedule_row,
-    parse_bulk_dividends_csv,
-    parse_bulk_prices_csv,
-    parse_bulk_splits_csv,
     write_corporate_actions_calendar,
+    write_bulk_dividends,
+    write_bulk_splits,
+    write_price_history,
+    parse_price_history_csv,
     write_exchange_list,
     write_holders,
     write_financial_facts,
     write_insider_transactions,
     write_listings,
     write_market_metrics,
-    write_bulk_dividends,
-    write_bulk_prices,
-    write_bulk_splits,
-    write_prices,
     write_reported_facts,
     write_share_universe,
 )
@@ -64,9 +54,11 @@ from src.io.storage import (
     save_exchanges_list_payload,
     save_exchange_shares_payload,
     save_upcoming_dividends_payload,
+    save_bulk_dividends_payload,
+    save_bulk_splits_payload,
+    save_price_history_payload,
     save_upcoming_earnings_payload,
     save_upcoming_splits_payload,
-    save_price_payload,
     save_raw_payload,
     save_share_data,
 )
@@ -138,231 +130,6 @@ def fetch_data(ticker: str) -> dict[str, Any] | None:
     return payload
 
 
-@dataclass(frozen=True)
-class PriceFetchResult:
-    """Container for price fetch results."""
-
-    payload: object | None
-    raw_text: str | None
-    error_code: str | None
-    message: str | None
-    http_status: int | None
-
-
-@dataclass(frozen=True)
-class BulkFetchResult:
-    """Container for bulk CSV fetch results."""
-
-    payload: str | None
-    error_code: str | None
-    message: str | None
-    http_status: int | None
-
-
-def _parse_prices_csv(payload_text: str) -> list[dict[str, object]]:
-    """Parse CSV price payloads into normalized rows."""
-    if not payload_text.strip():
-        return []
-    reader = csv.DictReader(payload_text.splitlines())
-    rows: list[dict[str, object]] = []
-    for entry in reader:
-        if not isinstance(entry, dict):
-            continue
-        date_value = entry.get("Date") or entry.get("date")
-        if date_value is None or not str(date_value).strip():
-            continue
-        rows.append(
-            {
-                "date": str(date_value).strip(),
-                "open": entry.get("Open") or entry.get("open"),
-                "high": entry.get("High") or entry.get("high"),
-                "low": entry.get("Low") or entry.get("low"),
-                "close": entry.get("Close") or entry.get("close"),
-                "adjusted_close": entry.get("Adjusted_close")
-                or entry.get("Adjusted Close")
-                or entry.get("adjusted_close"),
-                "volume": entry.get("Volume") or entry.get("volume"),
-            }
-        )
-    return rows
-
-
-def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResult:
-    """Fetch end-of-day prices for a ticker with error details."""
-    api_key = os.getenv("EODHD_API_KEY")
-    if not api_key:
-        raise ValueError("EODHD_API_KEY is not set")
-    params: dict[str, str] = {"api_token": api_key, "fmt": "csv"}
-    if start_date is not None:
-        params["from"] = start_date.isoformat()
-    try:
-        response = requests.get(
-            f"https://eodhd.com/api/eod/{ticker}",
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        text_payload = response.text
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else None
-        return PriceFetchResult(
-            payload=None,
-            raw_text=None,
-            error_code="http_error",
-            message=str(exc),
-            http_status=status,
-        )
-    except requests.RequestException as exc:
-        status = exc.response.status_code if exc.response is not None else None
-        return PriceFetchResult(
-            payload=None,
-            raw_text=None,
-            error_code="request_error",
-            message=str(exc),
-            http_status=status,
-        )
-    except ValueError as exc:
-        return PriceFetchResult(
-            payload=None,
-            raw_text=None,
-            error_code="decode_error",
-            message=str(exc),
-            http_status=None,
-        )
-    if text_payload is None:
-        return PriceFetchResult(
-            payload=None,
-            raw_text=text_payload,
-            error_code="payload_error",
-            message="Prices response did not return CSV payload",
-            http_status=None,
-        )
-    trimmed = text_payload.lstrip()
-    if trimmed.startswith("{") or trimmed.startswith("["):
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            return PriceFetchResult(
-                payload=None,
-                raw_text=text_payload,
-                error_code="decode_error",
-                message=str(exc),
-                http_status=None,
-            )
-        if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
-            return PriceFetchResult(
-                payload=None,
-                raw_text=text_payload,
-                error_code="provider_error",
-                message=str(payload),
-                http_status=None,
-            )
-        if isinstance(payload, (list, dict)):
-            return PriceFetchResult(
-                payload=payload,
-                raw_text=text_payload,
-                error_code=None,
-                message=None,
-                http_status=None,
-            )
-        return PriceFetchResult(
-            payload=None,
-            raw_text=text_payload,
-            error_code="payload_error",
-            message="Prices response did not return JSON rows",
-            http_status=None,
-        )
-    payload = _parse_prices_csv(text_payload)
-    return PriceFetchResult(
-        payload=payload,
-        raw_text=text_payload,
-        error_code=None,
-        message=None,
-        http_status=None,
-    )
-
-
-def fetch_prices(ticker: str, start_date: date | None) -> object | None:
-    """Fetch end-of-day prices for a ticker (network I/O happens here).
-
-    Args:
-        ticker (str): The ticker symbol to fetch.
-        start_date (date | None): Start date for the request, or None for full history.
-
-    Returns:
-        object | None: Raw provider payload for prices, or None on error.
-    """
-    result = _fetch_prices_result(ticker, start_date)
-    if result.error_code is not None:
-        logger.info("Price API request failed for %s: %s", ticker, result.message)
-    return result.payload
-
-
-def _fetch_bulk_csv(
-    exchange_code: str,
-    payload_date: date,
-    data_type: str | None,
-) -> BulkFetchResult:
-    """Fetch bulk CSV data for an exchange and date."""
-    api_key = os.getenv("EODHD_API_KEY")
-    if not api_key:
-        raise ValueError("EODHD_API_KEY is not set")
-    normalized = exchange_code.strip().upper()
-    if not normalized:
-        return BulkFetchResult(
-            payload=None,
-            error_code="invalid_exchange",
-            message="Exchange code is empty",
-            http_status=None,
-        )
-    params: dict[str, str] = {
-        "api_token": api_key,
-        "date": payload_date.isoformat(),
-    }
-    if data_type is not None:
-        params["type"] = data_type
-    try:
-        response = requests.get(
-            f"https://eodhd.com/api/eod-bulk-last-day/{normalized}",
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else None
-        return BulkFetchResult(
-            payload=None,
-            error_code="http_error",
-            message=str(exc),
-            http_status=status,
-        )
-    except requests.RequestException as exc:
-        status = exc.response.status_code if exc.response is not None else None
-        return BulkFetchResult(
-            payload=None,
-            error_code="request_error",
-            message=str(exc),
-            http_status=status,
-        )
-    text_payload = response.text
-    if not text_payload.strip():
-        return BulkFetchResult(payload="", error_code=None, message=None, http_status=None)
-    trimmed = text_payload.lstrip()
-    if trimmed.startswith("{") or trimmed.startswith("["):
-        try:
-            json_payload = response.json()
-        except ValueError:
-            json_payload = None
-        if isinstance(json_payload, dict) and any(
-            key in json_payload for key in ("Error", "error", "message")
-        ):
-            return BulkFetchResult(
-                payload=None,
-                error_code="provider_error",
-                message=str(json_payload),
-                http_status=response.status_code,
-            )
-    return BulkFetchResult(payload=text_payload, error_code=None, message=None, http_status=None)
 
 
 def _fetch_calendar(endpoint: str, label: str, start_date: date, end_date: date) -> object | None:
@@ -433,29 +200,66 @@ def fetch_upcoming_dividends(payload_date: date) -> object | None:
         "filter[date_eq]": payload_date.isoformat(),
     }
     logger.info("Fetching upcoming dividends for %s", payload_date)
-    try:
-        response = requests.get(
-            "https://eodhd.com/api/calendar/dividends",
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except requests.RequestException as exc:
-        logger.info("Calendar dividends request failed for %s: %s", payload_date, exc)
-        return None
-    except ValueError as exc:
-        logger.info("Failed to decode dividends calendar JSON for %s: %s", payload_date, exc)
-        return None
-    if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
-        logger.info("EODHD dividends calendar error payload for %s: %s", payload_date, payload)
-        return None
-    if not isinstance(payload, (list, dict)):
-        logger.info("EODHD dividends calendar response did not return JSON rows for %s", payload_date)
-        return None
-    if isinstance(payload, list):
-        logger.debug("Received %d dividends calendar entries for %s", len(payload), payload_date)
-    return payload
+    entries: list[object] = []
+    next_url: str | None = "https://eodhd.com/api/calendar/dividends"
+    next_params: dict[str, str] | None = params
+    seen_urls: set[str] = set()
+
+    def _extract_entries(page_payload: object) -> list[object]:
+        if isinstance(page_payload, list):
+            return list(page_payload)
+        if isinstance(page_payload, dict):
+            data = page_payload.get("data")
+            if isinstance(data, list):
+                return list(data)
+            dividends = page_payload.get("dividends")
+            if isinstance(dividends, list):
+                return list(dividends)
+            return [entry for entry in page_payload.values() if isinstance(entry, Mapping)]
+        return []
+
+    while next_url:
+        try:
+            response = requests.get(next_url, params=next_params, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            logger.info("Calendar dividends request failed for %s: %s", payload_date, exc)
+            return None
+        except ValueError as exc:
+            logger.info("Failed to decode dividends calendar JSON for %s: %s", payload_date, exc)
+            return None
+        if isinstance(payload, dict) and any(key in payload for key in ("Error", "error", "message")):
+            logger.info("EODHD dividends calendar error payload for %s: %s", payload_date, payload)
+            return None
+        if not isinstance(payload, (list, dict)):
+            logger.info(
+                "EODHD dividends calendar response did not return JSON rows for %s",
+                payload_date,
+            )
+            return None
+        entries.extend(_extract_entries(payload))
+        next_params = None
+        next_link: object | None = None
+        if isinstance(payload, dict):
+            links = payload.get("links")
+            if isinstance(links, Mapping):
+                next_link = links.get("next")
+            else:
+                next_link = payload.get("next")
+        if next_link is None or str(next_link).strip().lower() in {"", "null"}:
+            next_url = None
+        elif isinstance(next_link, str):
+            if next_link in seen_urls:
+                logger.warning("Detected repeated dividends pagination link; stopping at %s", next_link)
+                next_url = None
+            else:
+                seen_urls.add(next_link)
+                next_url = next_link
+        else:
+            next_url = None
+    logger.debug("Received %d dividends calendar entries for %s", len(entries), payload_date)
+    return entries
 
 
 def fetch_exchange_list() -> object | None:
@@ -522,6 +326,88 @@ def fetch_exchange_share_list(exchange_code: str) -> object | None:
     if isinstance(payload, list):
         logger.debug("Received %d share universe entries for %s", len(payload), normalized)
     return payload
+
+
+def fetch_bulk_dividends(exchange_code: str, payload_date: date) -> str | None:
+    """Fetch bulk dividends CSV for a specific exchange and date."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    normalized = exchange_code.strip().upper()
+    if not normalized:
+        logger.info("Exchange code is empty; skipping bulk dividends request")
+        return None
+    logger.debug("Fetching bulk dividends for %s on %s", normalized, payload_date)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/eod-bulk-last-day/{normalized}",
+            params={
+                "api_token": api_key,
+                "date": payload_date.isoformat(),
+                "type": "dividends",
+                "fmt": "csv",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as exc:
+        logger.warning("Bulk dividends request failed for %s: %s", normalized, exc)
+        return None
+
+
+def fetch_bulk_splits(exchange_code: str, payload_date: date) -> str | None:
+    """Fetch bulk splits CSV for a specific exchange and date."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    normalized = exchange_code.strip().upper()
+    if not normalized:
+        logger.info("Exchange code is empty; skipping bulk splits request")
+        return None
+    logger.debug("Fetching bulk splits for %s on %s", normalized, payload_date)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/eod-bulk-last-day/{normalized}",
+            params={
+                "api_token": api_key,
+                "date": payload_date.isoformat(),
+                "type": "splits",
+                "fmt": "csv",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as exc:
+        logger.warning("Bulk splits request failed for %s: %s", normalized, exc)
+        return None
+
+
+def fetch_price_history(symbol: str, start_date: date | None = None) -> str | None:
+    """Fetch price history CSV for a symbol."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    normalized = symbol.strip().upper()
+    if not normalized:
+        logger.info("Symbol is empty; skipping price history request")
+        return None
+    params = {"api_token": api_key, "fmt": "csv"}
+    if start_date is not None:
+        params["from"] = start_date.isoformat()
+    logger.debug("Fetching price history for %s", normalized)
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/eod/{normalized}",
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as exc:
+        logger.warning("Price history request failed for %s: %s", normalized, exc)
+        return None
 
 
 def _init_engine(database_required: bool) -> Engine | None:
@@ -743,6 +629,26 @@ def run_download_pipeline(
                     refresh_date=failed_refresh_date,
                     status="failed",
                 )
+    _run_bulk_daily_refresh(
+        pipeline="bulk_dividends",
+        log_label="bulk dividends",
+        run_retrieval=run_retrieval,
+        data_dir=data_dir,
+        engine=engine,
+        fetch_payload=fetch_bulk_dividends,
+        save_payload=save_bulk_dividends_payload,
+        write_payload=write_bulk_dividends,
+    )
+    _run_bulk_daily_refresh(
+        pipeline="bulk_splits",
+        log_label="bulk splits",
+        run_retrieval=run_retrieval,
+        data_dir=data_dir,
+        engine=engine,
+        fetch_payload=fetch_bulk_splits,
+        save_payload=save_bulk_splits_payload,
+        write_payload=write_bulk_splits,
+    )
     inserted = write_corporate_actions_calendar(
         engine=engine,
         retrieval_date=run_retrieval,
@@ -752,351 +658,82 @@ def run_download_pipeline(
     )
     if inserted == 0:
         logger.info("No corporate actions calendar rows inserted")
-    provider = "EODHD"
-    bulk_unmatched = get_unmatched_open_refreshes(engine, pipeline="bulk")
-    bulk_due = _bulk_due_refresh_records(bulk_unmatched, run_retrieval)
-    if bulk_unmatched:
-        logger.info(
-            "Bulk refresh schedule: unmatched=%d due=%d",
-            len(bulk_unmatched),
-            len(bulk_due),
-        )
-    if not bulk_unmatched:
-        inception_index = append_refresh_schedule_row(
-            engine=engine,
-            open_index=None,
-            pipeline="bulk",
-            cause="inception",
-            retrieval_date=run_retrieval,
-            refresh_date=run_retrieval.date(),
-            status="opened",
-        )
-        bulk_due = [{"index": inception_index, "pipeline": "bulk", "cause": "inception"}]
-        logger.info("Created inception bulk refresh at index %d", inception_index)
-    if not bulk_due:
-        logger.info("No bulk refresh scheduled; skipping bulk price updates")
+    price_symbols = get_filtered_universe_symbols(engine)
+    if not price_symbols:
+        logger.info("No symbols available for price history refresh; skipping prices update")
     else:
-        bulk_ok = True
-        bulk_target = _bulk_target_date(run_retrieval)
-        stale_days = get_prices_days_stale()
-        if stale_days < 0:
-            logger.warning("Invalid prices.days_stale=%d; using 0", stale_days)
-            stale_days = 0
-        max_price_symbols = get_max_symbols_for_prices()
-        logger.info("Bulk price target date: %s", bulk_target)
-        logger.info(
-            "Bulk refresh config: prices.days_stale=%d max_symbols_for_prices=%d",
-            stale_days,
-            max_price_symbols,
-        )
-        exchange_codes = get_exchange_codes(engine)
-        bulk_failures: list[str] = []
-        integrity_skips: list[str] = []
-        dividend_symbols: set[str] = set()
-        split_symbols: set[str] = set()
-        trigger_invalid_symbols: set[str] = set()
-        bulk_dividend_inserts = 0
-        bulk_split_inserts = 0
-        bulk_price_inserts = 0
-        refresh_summary = {
-            "total": 0,
-            "attempted": 0,
-            "updated": 0,
-            "failures": 0,
-            "skipped": 0,
-            "empty": 0,
-        }
-        attempted_symbols: set[str] = set()
-        try:
-            if not exchange_codes:
-                logger.info("No exchanges available for bulk price/dividend/split updates")
-            else:
-                logger.info(
-                    "Starting bulk dividends/splits download for %d exchanges",
-                    len(exchange_codes),
+        logger.info("Starting price history refresh for %d symbols", len(price_symbols))
+        price_success = 0
+        price_failed = 0
+        price_inserted = 0
+        for symbol in price_symbols:
+            latest_date = get_latest_price_date(engine, symbol)
+            if latest_date is None:
+                payload = fetch_price_history(symbol, None)
+                if payload is None:
+                    price_failed += 1
+                    continue
+                save_price_history_payload(data_dir, symbol, payload)
+                rows = parse_price_history_csv(
+                    payload=payload,
+                    symbol=symbol,
+                    provider="EODHD",
+                    retrieval_date=run_retrieval,
                 )
-            for exchange_code in exchange_codes:
-                dividends_result = _fetch_bulk_csv(exchange_code, bulk_target, "dividends")
-                if dividends_result.payload is None:
-                    bulk_failures.append(f"dividends:{exchange_code}")
-                    logger.warning(
-                        "Bulk dividends download failed for %s: %s",
-                        exchange_code,
-                        dividends_result.message,
-                    )
-                else:
-                    rows, invalid_map, invalid_unknown = parse_bulk_dividends_csv(
-                        dividends_result.payload,
-                        run_retrieval,
-                    )
-                    valid_rows = [
-                        row
-                        for row in rows
-                        for row_date in [row.get("date")]
-                        if isinstance(row_date, date) and row_date <= bulk_target
-                    ]
-                    _record_bulk_invalids(
-                        "dividends",
-                        invalid_map,
-                        invalid_unknown,
-                        trigger_invalid_symbols,
-                    )
-                    bulk_dividend_inserts += write_bulk_dividends(engine, valid_rows)
-                    dividend_symbols.update(
-                        row_symbol
-                        for row in valid_rows
-                        for row_date in [row.get("date")]
-                        for row_symbol in [row.get("symbol")]
-                        if isinstance(row_date, date)
-                        and row_date == bulk_target
-                        and isinstance(row_symbol, str)
-                    )
-                splits_result = _fetch_bulk_csv(exchange_code, bulk_target, "splits")
-                if splits_result.payload is None:
-                    bulk_failures.append(f"splits:{exchange_code}")
-                    logger.warning(
-                        "Bulk splits download failed for %s: %s",
-                        exchange_code,
-                        splits_result.message,
-                    )
-                else:
-                    rows, invalid_map, invalid_unknown = parse_bulk_splits_csv(
-                        splits_result.payload,
-                        run_retrieval,
-                    )
-                    valid_rows = [
-                        row
-                        for row in rows
-                        for row_date in [row.get("date")]
-                        if isinstance(row_date, date) and row_date <= bulk_target
-                    ]
-                    _record_bulk_invalids(
-                        "splits",
-                        invalid_map,
-                        invalid_unknown,
-                        trigger_invalid_symbols,
-                    )
-                    bulk_split_inserts += write_bulk_splits(engine, valid_rows)
-                    split_symbols.update(
-                        row_symbol
-                        for row in valid_rows
-                        for row_date in [row.get("date")]
-                        for row_symbol in [row.get("symbol")]
-                        if isinstance(row_date, date)
-                        and row_date == bulk_target
-                        and isinstance(row_symbol, str)
-                    )
-            last_closed = get_latest_refresh_retrieval(engine, pipeline="bulk", status="closed")
-            full_refresh_all = False
-            if last_closed is None:
-                full_refresh_all = True
-                logger.warning("Bulk refresh history missing; full refresh required")
-            else:
-                last_target = _bulk_target_date(last_closed)
-                stale_cutoff = bulk_target - timedelta(days=stale_days)
-                if last_target < stale_cutoff:
-                    full_refresh_all = True
-                    logger.warning(
-                        "Bulk refresh stale: last_target=%s stale_cutoff=%s",
-                        last_target,
-                        stale_cutoff,
-                    )
-            trigger_symbols = dividend_symbols | split_symbols | trigger_invalid_symbols
-            if full_refresh_all:
-                logger.warning(
-                    "Bulk refresh stale or missing history; running full refresh for all symbols",
-                )
-                status_rows = get_filtered_universe_price_status(engine, bulk_target)
-                latest_by_symbol: dict[str, date | None] = {}
-                for row in status_rows:
-                    symbol = row.get("symbol")
-                    latest = row.get("latest_date")
-                    if isinstance(symbol, str):
-                        latest_by_symbol[symbol] = latest if isinstance(latest, date) else None
-                for symbol in trigger_symbols:
-                    latest_by_symbol.setdefault(symbol, None)
-                full_refresh_symbols = _apply_price_refresh_limit(
-                    latest_by_symbol,
-                    max_price_symbols,
-                )
-            else:
-                full_refresh_symbols = _select_full_refresh_symbols(
-                    engine=engine,
-                    cutoff_date=bulk_target,
-                    stale_days=stale_days,
-                    max_symbols=max_price_symbols,
-                    trigger_symbols=trigger_symbols,
-                )
-            if not full_refresh_symbols:
-                logger.info("No symbols selected for full price history refresh")
-            else:
-                logger.info(
-                    "Starting full price history refresh for %d symbols",
-                    len(full_refresh_symbols),
-                )
-            refresh_summary, attempted_symbols = _run_full_price_refreshes(
-                engine=engine,
-                data_dir=data_dir,
-                run_retrieval=run_retrieval,
-                symbols=full_refresh_symbols,
-                price_cutoff=bulk_target,
-                provider=provider,
-                integrity_skips=integrity_skips,
+                price_inserted += write_price_history(engine, rows)
+                price_success += 1
+                continue
+            payload = fetch_price_history(symbol, latest_date)
+            if payload is None:
+                price_failed += 1
+                continue
+            save_price_history_payload(data_dir, symbol, payload)
+            rows_all = parse_price_history_csv(
+                payload=payload,
+                symbol=symbol,
+                provider="EODHD",
+                retrieval_date=run_retrieval,
             )
-            invalid_price_symbols: set[str] = set()
-            if exchange_codes:
-                logger.info("Starting bulk prices download for %d exchanges", len(exchange_codes))
-            for exchange_code in exchange_codes:
-                prices_result = _fetch_bulk_csv(exchange_code, bulk_target, None)
-                if prices_result.payload is None:
-                    bulk_failures.append(f"prices:{exchange_code}")
-                    logger.warning(
-                        "Bulk prices download failed for %s: %s",
-                        exchange_code,
-                        prices_result.message,
-                    )
+            overlap_row = next(
+                (row for row in rows_all if row.get("date") == latest_date),
+                None,
+            )
+            snapshot = get_price_day_snapshot(engine, symbol, latest_date)
+            if overlap_row is None or snapshot is None or not _price_overlap_matches(snapshot, overlap_row):
+                logger.warning(
+                    "Price overlap mismatch for %s on %s; refreshing full history",
+                    symbol,
+                    latest_date,
+                )
+                full_payload = fetch_price_history(symbol, None)
+                if full_payload is None:
+                    price_failed += 1
                     continue
-                rows, invalid_map, invalid_unknown = parse_bulk_prices_csv(
-                    prices_result.payload,
-                    run_retrieval,
-                    provider,
+                save_price_history_payload(data_dir, symbol, full_payload)
+                rows_all = parse_price_history_csv(
+                    payload=full_payload,
+                    symbol=symbol,
+                    provider="EODHD",
+                    retrieval_date=run_retrieval,
                 )
-                valid_rows = [
-                    row
-                    for row in rows
-                    for row_date in [row.get("date")]
-                    if isinstance(row_date, date) and row_date <= bulk_target
-                ]
-                _record_bulk_invalids(
-                    "prices",
-                    invalid_map,
-                    invalid_unknown,
-                    invalid_price_symbols,
-                )
-                bulk_price_inserts += write_bulk_prices(engine, valid_rows)
-            remaining_capacity: int | None
-            if max_price_symbols == -1:
-                remaining_capacity = None
-            else:
-                remaining_capacity = max(max_price_symbols - refresh_summary["attempted"], 0)
-            extra_invalid = [
-                symbol
-                for symbol in invalid_price_symbols
-                if symbol not in attempted_symbols
+                price_inserted += write_price_history(engine, rows_all)
+                price_success += 1
+                continue
+            rows = [
+                row
+                for row in rows_all
+                if isinstance(row.get("date"), date) and row.get("date") > latest_date
             ]
-            if extra_invalid:
-                if remaining_capacity == 0:
-                    logger.error(
-                        "Skipped %d symbols with invalid bulk prices due to cap",
-                        len(extra_invalid),
-                    )
-                else:
-                    logger.info(
-                        "Refreshing %d symbols due to invalid bulk prices",
-                        len(extra_invalid),
-                    )
-                    extra_latest: dict[str, date | None] = {
-                        symbol: None for symbol in extra_invalid
-                    }
-                    selected_extra = (
-                        extra_invalid
-                        if remaining_capacity is None
-                        else _apply_price_refresh_limit(extra_latest, remaining_capacity)
-                    )
-                    extra_summary, extra_attempted = _run_full_price_refreshes(
-                        engine=engine,
-                        data_dir=data_dir,
-                        run_retrieval=run_retrieval,
-                        symbols=selected_extra,
-                        price_cutoff=bulk_target,
-                        provider=provider,
-                        integrity_skips=integrity_skips,
-                    )
-                    attempted_symbols.update(extra_attempted)
-                    for key in refresh_summary:
-                        refresh_summary[key] += extra_summary.get(key, 0)
-            if refresh_summary["total"]:
-                logger.info(
-                    "Full price refresh summary: total=%d attempted=%d updated=%d failures=%d skipped=%d empty=%d",
-                    refresh_summary["total"],
-                    refresh_summary["attempted"],
-                    refresh_summary["updated"],
-                    refresh_summary["failures"],
-                    refresh_summary["skipped"],
-                    refresh_summary["empty"],
-                )
-            if bulk_dividend_inserts or bulk_split_inserts or bulk_price_inserts:
-                logger.info(
-                    "Bulk inserts: dividends=%d splits=%d prices=%d",
-                    bulk_dividend_inserts,
-                    bulk_split_inserts,
-                    bulk_price_inserts,
-                )
-            if bulk_failures:
-                logger.error("Bulk download failures: %s", ", ".join(bulk_failures))
-            if integrity_skips:
-                sample = ", ".join(integrity_skips[:25])
-                suffix = " (truncated)" if len(integrity_skips) > 25 else ""
-                logger.error(
-                    "Symbol integrity skips (>=7 failed days): %d symbols: %s%s",
-                    len(integrity_skips),
-                    sample,
-                    suffix,
-                )
-            if bulk_failures:
-                bulk_ok = False
-            if full_refresh_all and refresh_summary["failures"] > 0:
-                bulk_ok = False
-        except Exception as exc:
-            bulk_ok = False
-            logger.exception("Bulk price refresh failed: %s", exc)
-        if bulk_ok:
-            next_refresh = _next_bulk_cutoff_date(run_retrieval)
-            logger.info("Scheduling next bulk refresh for %s", next_refresh)
-            for record in bulk_due:
-                opened_index = _coerce_int(record.get("index"))
-                pipeline = record.get("pipeline")
-                cause = record.get("cause")
-                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
-                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
-                    continue
-                closed_index = append_refresh_schedule_row(
-                    engine=engine,
-                    open_index=opened_index,
-                    pipeline=pipeline,
-                    cause=cause,
-                    retrieval_date=run_retrieval,
-                    refresh_date=None,
-                    status="closed",
-                )
-                append_refresh_schedule_row(
-                    engine=engine,
-                    open_index=closed_index,
-                    pipeline=pipeline,
-                    cause=cause,
-                    retrieval_date=run_retrieval,
-                    refresh_date=next_refresh,
-                    status="opened",
-                )
-        else:
-            failed_refresh_date = run_retrieval.date()
-            logger.warning("Bulk refresh failed; scheduling retry for %s", failed_refresh_date)
-            for record in bulk_due:
-                opened_index = _coerce_int(record.get("index"))
-                pipeline = record.get("pipeline")
-                cause = record.get("cause")
-                if opened_index is None or not isinstance(pipeline, str) or not isinstance(cause, str):
-                    logger.warning("Skipping refresh schedule update for invalid record: %s", record)
-                    continue
-                append_refresh_schedule_row(
-                    engine=engine,
-                    open_index=opened_index,
-                    pipeline=pipeline,
-                    cause=cause,
-                    retrieval_date=run_retrieval,
-                    refresh_date=failed_refresh_date,
-                    status="failed",
-                )
+            price_inserted += write_price_history(engine, rows)
+            price_success += 1
+        logger.info(
+            "Price history summary: symbols=%d successes=%d failures=%d inserted_rows=%d",
+            len(price_symbols),
+            price_success,
+            price_failed,
+            price_inserted,
+        )
+    provider = "EODHD"
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
         logger.info("No tickers scheduled for update; skipping ticker processing")
@@ -1270,6 +907,182 @@ def _due_refresh_records(
     ]
 
 
+def _cutoff_reached(run_retrieval: datetime) -> bool:
+    """Return True when the 10:00 UTC cutoff has been reached."""
+    utc_retrieval = (
+        run_retrieval if run_retrieval.tzinfo is not None else run_retrieval.replace(tzinfo=UTC)
+    ).astimezone(UTC)
+    return (utc_retrieval.hour, utc_retrieval.minute, utc_retrieval.second, utc_retrieval.microsecond) >= (
+        10,
+        0,
+        0,
+        0,
+    )
+
+
+def _bulk_target_date(run_retrieval: datetime) -> date:
+    """Return the bulk payload date based on the 10:00 UTC cutoff."""
+    utc_date = (
+        run_retrieval if run_retrieval.tzinfo is not None else run_retrieval.replace(tzinfo=UTC)
+    ).astimezone(UTC).date()
+    days_back = 1 if _cutoff_reached(run_retrieval) else 2
+    return utc_date - timedelta(days=days_back)
+
+
+def _next_cutoff_date(run_retrieval: datetime) -> date:
+    """Return the next cutoff date (10:00 UTC) for scheduling."""
+    utc_date = run_retrieval.astimezone(UTC).date()
+    if _cutoff_reached(run_retrieval):
+        return utc_date + timedelta(days=1)
+    return utc_date
+
+
+def _price_overlap_matches(
+    existing: Mapping[str, object],
+    incoming: Mapping[str, object],
+) -> bool:
+    """Return True when price overlap rows match on OHLC values."""
+    rel_tol, abs_tol = get_database_tolerances()
+    for key in ("open", "high", "low", "close"):
+        existing_val = existing.get(key)
+        incoming_val = incoming.get(key)
+        if existing_val is None or incoming_val is None:
+            return False
+        if not isinstance(existing_val, (int, float)) or not isinstance(incoming_val, (int, float)):
+            return False
+        if not isclose(float(existing_val), float(incoming_val), rel_tol=rel_tol, abs_tol=abs_tol):
+            return False
+    return True
+
+
+def _run_bulk_daily_refresh(
+    *,
+    pipeline: str,
+    log_label: str,
+    run_retrieval: datetime,
+    data_dir: Path,
+    engine: Engine,
+    fetch_payload: Callable[[str, date], str | None],
+    save_payload: Callable[[Path, str, date, str], Path],
+    write_payload: Callable[..., int],
+) -> None:
+    """Run a daily bulk refresh with refresh_schedule tracking."""
+    refresh_today = run_retrieval.date()
+    unmatched = get_unmatched_open_refreshes(engine, pipeline=pipeline)
+    due_refreshes = _due_refresh_records(unmatched, refresh_today)
+    if not unmatched:
+        inception_index = append_refresh_schedule_row(
+            engine=engine,
+            open_index=None,
+            pipeline=pipeline,
+            cause="inception",
+            retrieval_date=run_retrieval,
+            refresh_date=refresh_today,
+            status="opened",
+        )
+        due_refreshes = [{"index": inception_index, "pipeline": pipeline, "cause": "inception"}]
+        logger.info("Created inception %s refresh at index %d", log_label, inception_index)
+    if not due_refreshes:
+        logger.info(
+            "No %s refresh scheduled for %s; skipping %s update",
+            log_label,
+            refresh_today,
+            log_label,
+        )
+        return
+    refresh_ok = True
+    target_date = _bulk_target_date(run_retrieval)
+    total_rows = 0
+    failure_exchanges = 0
+    exchange_codes: list[str] = []
+    try:
+        exchange_codes = get_exchange_codes(engine)
+        if not exchange_codes:
+            logger.info("No eligible exchanges found; skipping %s refresh", log_label)
+        else:
+            logger.info("Refreshing %s for %d exchanges", log_label, len(exchange_codes))
+            logger.debug(
+                "Exchange codes scheduled for %s refresh (sample): %s",
+                log_label,
+                exchange_codes[:25],
+            )
+        for exchange_code in tqdm(
+            exchange_codes,
+            desc=f"{log_label} exchanges",
+            unit="ex",
+            leave=False,
+        ):
+            payload = fetch_payload(exchange_code, target_date)
+            if payload is None:
+                refresh_ok = False
+                failure_exchanges += 1
+                continue
+            save_payload(data_dir, exchange_code, target_date, payload)
+            inserted_rows = write_payload(
+                engine=engine,
+                retrieval_date=run_retrieval,
+                payload=payload,
+                target_date=target_date,
+            )
+            total_rows += inserted_rows
+    except Exception as exc:
+        refresh_ok = False
+        logger.exception("%s refresh failed: %s", log_label, exc)
+    logger.info(
+        "%s summary: exchanges=%d inserted_rows=%d failures=%d target_date=%s",
+        log_label,
+        len(exchange_codes),
+        total_rows,
+        failure_exchanges,
+        target_date,
+    )
+    if refresh_ok:
+        next_refresh = _next_cutoff_date(run_retrieval)
+        for record in due_refreshes:
+            opened_index = _coerce_int(record.get("index"))
+            pipeline_value = record.get("pipeline")
+            cause = record.get("cause")
+            if opened_index is None or not isinstance(pipeline_value, str) or not isinstance(cause, str):
+                logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                continue
+            closed_index = append_refresh_schedule_row(
+                engine=engine,
+                open_index=opened_index,
+                pipeline=pipeline_value,
+                cause=cause,
+                retrieval_date=run_retrieval,
+                refresh_date=None,
+                status="closed",
+            )
+            append_refresh_schedule_row(
+                engine=engine,
+                open_index=closed_index,
+                pipeline=pipeline_value,
+                cause=cause,
+                retrieval_date=run_retrieval,
+                refresh_date=next_refresh,
+                status="opened",
+            )
+    else:
+        failed_refresh_date = refresh_today
+        for record in due_refreshes:
+            opened_index = _coerce_int(record.get("index"))
+            pipeline_value = record.get("pipeline")
+            cause = record.get("cause")
+            if opened_index is None or not isinstance(pipeline_value, str) or not isinstance(cause, str):
+                logger.warning("Skipping refresh schedule update for invalid record: %s", record)
+                continue
+            append_refresh_schedule_row(
+                engine=engine,
+                open_index=opened_index,
+                pipeline=pipeline_value,
+                cause=cause,
+                retrieval_date=run_retrieval,
+                refresh_date=failed_refresh_date,
+                status="failed",
+            )
+
+
 def _coerce_int(value: object) -> int | None:
     """Coerce a value to int with a None fallback."""
     if isinstance(value, bool):
@@ -1282,356 +1095,6 @@ def _coerce_int(value: object) -> int | None:
         except ValueError:
             return None
     return None
-
-
-def _bulk_target_date(run_retrieval: datetime) -> date:
-    """Return the effective 'yesterday' date based on the 10:00 UTC cutoff."""
-    retrieval = run_retrieval
-    if retrieval.tzinfo is None:
-        retrieval = retrieval.replace(tzinfo=UTC)
-    retrieval_utc = retrieval.astimezone(UTC)
-    cutoff = time(10, 0)
-    if retrieval_utc.time() >= cutoff:
-        return retrieval_utc.date() - timedelta(days=1)
-    return retrieval_utc.date() - timedelta(days=2)
-
-
-def _next_bulk_cutoff_date(run_retrieval: datetime) -> date:
-    """Return the next bulk cutoff date based on the 10:00 UTC cutoff."""
-    retrieval = run_retrieval
-    if retrieval.tzinfo is None:
-        retrieval = retrieval.replace(tzinfo=UTC)
-    retrieval_utc = retrieval.astimezone(UTC)
-    cutoff = time(10, 0)
-    if retrieval_utc.time() >= cutoff:
-        return retrieval_utc.date() + timedelta(days=1)
-    return retrieval_utc.date()
-
-
-def _bulk_due_refresh_records(
-    open_records: list[dict[str, object]],
-    run_retrieval: datetime,
-) -> list[dict[str, object]]:
-    """Return bulk refresh schedule records that are due based on cutoff rules."""
-    def _as_date(value: object) -> date | None:
-        if isinstance(value, datetime):
-            return value.date()
-        if isinstance(value, date):
-            return value
-        return None
-
-    retrieval = run_retrieval
-    if retrieval.tzinfo is None:
-        retrieval = retrieval.replace(tzinfo=UTC)
-    retrieval_utc = retrieval.astimezone(UTC)
-    today = retrieval_utc.date()
-    now_time = retrieval_utc.time()
-    cutoff = time(10, 0)
-    due: list[dict[str, object]] = []
-    for record in open_records:
-        failed_date = _as_date(record.get("failed_refresh_date"))
-        if failed_date is not None:
-            if failed_date <= today:
-                due.append(record)
-            continue
-        refresh_date = _as_date(record.get("refresh_date"))
-        if refresh_date is None:
-            continue
-        if refresh_date < today:
-            due.append(record)
-        elif refresh_date == today and now_time >= cutoff:
-            due.append(record)
-    return due
-
-
-def _record_bulk_invalids(
-    label: str,
-    invalid_rows: dict[str, list[str]],
-    unknown_count: int,
-    invalid_symbols: set[str],
-) -> None:
-    """Log bulk parsing issues and collect invalid symbols."""
-    if unknown_count:
-        logger.warning("Skipped %d bulk %s rows with missing identifiers", unknown_count, label)
-    for symbol, fields in invalid_rows.items():
-        field_list = ", ".join(sorted(set(fields))) if fields else "unknown"
-        logger.warning("Invalid bulk %s row for %s (fields: %s)", label, symbol, field_list)
-        invalid_symbols.add(symbol)
-
-
-def _full_refresh_candidate_dates(
-    engine: Engine,
-    cutoff_date: date,
-    stale_days: int,
-    trigger_symbols: set[str],
-) -> dict[str, date | None]:
-    """Build candidate latest-date map for full price refreshes."""
-    universe_rows = get_filtered_universe_price_status(engine, cutoff_date)
-    latest_by_symbol: dict[str, date | None] = {}
-    for row in universe_rows:
-        symbol = row.get("symbol")
-        if not isinstance(symbol, str):
-            continue
-        latest = row.get("latest_date")
-        latest_by_symbol[symbol] = latest if isinstance(latest, date) else None
-    stale_threshold = cutoff_date - timedelta(days=stale_days)
-    candidates = {
-        symbol
-        for symbol, latest in latest_by_symbol.items()
-        if latest is None or latest <= stale_threshold
-    }
-    candidates |= trigger_symbols
-    for symbol in candidates:
-        if symbol not in latest_by_symbol:
-            latest_by_symbol[symbol] = get_latest_price_date_before(engine, symbol, cutoff_date)
-    return {
-        symbol: (None if symbol in trigger_symbols else latest_by_symbol.get(symbol))
-        for symbol in candidates
-    }
-
-
-def _select_full_refresh_symbols(
-    engine: Engine,
-    cutoff_date: date,
-    stale_days: int,
-    max_symbols: int,
-    trigger_symbols: set[str],
-) -> list[str]:
-    """Select symbols for full history refresh based on triggers and staleness."""
-    candidates = _full_refresh_candidate_dates(engine, cutoff_date, stale_days, trigger_symbols)
-    if not candidates:
-        return []
-    return _apply_price_refresh_limit(candidates, max_symbols)
-
-
-def _apply_price_refresh_limit(
-    latest_by_symbol: dict[str, date | None],
-    max_symbols: int,
-) -> list[str]:
-    """Apply the staleness ordering and cap to price refresh symbols."""
-    if max_symbols == -1:
-        return list(latest_by_symbol.keys())
-    if max_symbols <= 0:
-        return []
-    grouped: dict[date | None, list[str]] = {}
-    for symbol, latest_date in latest_by_symbol.items():
-        grouped.setdefault(latest_date, []).append(symbol)
-    sorted_dates = sorted(
-        grouped.keys(),
-        key=lambda item: date.min if item is None else item,
-    )
-    selected: list[str] = []
-    for latest_date in sorted_dates:
-        group = grouped.get(latest_date, [])
-        remaining = max_symbols - len(selected)
-        if remaining <= 0:
-            break
-        if len(group) <= remaining:
-            selected.extend(group)
-        else:
-            selected.extend(random.sample(group, remaining))
-            break
-    return selected
-
-
-def _run_full_price_refreshes(
-    engine: Engine,
-    data_dir: Path,
-    run_retrieval: datetime,
-    symbols: list[str],
-    price_cutoff: date,
-    provider: str,
-    integrity_skips: list[str],
-) -> tuple[dict[str, int], set[str]]:
-    """Fetch and persist full price history for selected symbols."""
-    summary = {
-        "total": len(symbols),
-        "attempted": 0,
-        "updated": 0,
-        "failures": 0,
-        "skipped": 0,
-        "empty": 0,
-    }
-    attempted_symbols: set[str] = set()
-    if not symbols:
-        return summary, attempted_symbols
-    price_iterator = tqdm(
-        symbols,
-        total=len(symbols),
-        desc="Price history",
-        unit="symbol",
-        ascii=True,
-        disable=not sys.stderr.isatty(),
-    )
-    for symbol in price_iterator:
-        if not isinstance(symbol, str) or not symbol:
-            logger.warning("Skipping price history refresh for invalid symbol entry: %s", symbol)
-            continue
-        failure_days = get_symbol_failure_days(engine, symbol, pipeline="prices")
-        if failure_days >= 7:
-            summary["skipped"] += 1
-            integrity_skips.append(symbol)
-            logger.warning(
-                "Skipping price history refresh for %s after %d failed days",
-                symbol,
-                failure_days,
-            )
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="skipped",
-                error_code="max_failures",
-                message=f"Skipped after {failure_days} failed days",
-            )
-            continue
-        summary["attempted"] += 1
-        attempted_symbols.add(symbol)
-        result = _fetch_prices_result(symbol, None)
-        if result.payload is None:
-            summary["failures"] += 1
-            logger.warning(
-                "Skipping price persistence for %s due to fetch error: %s",
-                symbol,
-                result.message,
-            )
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="failed",
-                error_code=result.error_code,
-                http_status=result.http_status,
-                message=result.message,
-            )
-            continue
-        price_payload = _filter_price_payload_for_cutoff(result.payload, price_cutoff)
-        if (isinstance(price_payload, list) and not price_payload) or (
-            isinstance(price_payload, Mapping) and not price_payload
-        ):
-            summary["failures"] += 1
-            summary["empty"] += 1
-            logger.warning(
-                "Skipping price persistence for %s due to empty payload after cutoff",
-                symbol,
-            )
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="failed",
-                error_code="empty_payload",
-                message="Empty payload after cutoff filter",
-            )
-            continue
-        save_price_payload(data_dir, symbol, result.raw_text or price_payload)
-        inserted = write_prices(
-            engine=engine,
-            symbol=symbol,
-            provider=provider,
-            retrieval_date=run_retrieval,
-            raw_data=price_payload,
-        )
-        if inserted > 0:
-            summary["updated"] += 1
-        append_symbol_integrity_row(
-            engine=engine,
-            symbol=symbol,
-            pipeline="prices",
-            retrieval_date=run_retrieval,
-            status="success",
-        )
-    return summary, attempted_symbols
-
-
-def _coerce_price_value(value: object) -> float | None:
-    """Coerce a price value into a float when possible."""
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
-
-
-def _prices_match(db_value: float | None, payload_value: float | None) -> bool:
-    """Compare price values using configured tolerances."""
-    if db_value is None or payload_value is None:
-        return False
-    rel_tol, abs_tol = get_database_tolerances()
-    return isclose(db_value, payload_value, rel_tol=rel_tol, abs_tol=abs_tol)
-
-
-def _coerce_payload_date(value: object) -> date | None:
-    """Coerce a payload date to a date object."""
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
-
-def _price_payload_entries(payload: object) -> Iterable[Mapping[str, object]]:
-    """Yield price payload entries."""
-    if isinstance(payload, list):
-        return [entry for entry in payload if isinstance(entry, Mapping)]
-    if isinstance(payload, Mapping):
-        return [entry for entry in payload.values() if isinstance(entry, Mapping)]
-    return []
-
-
-def _payload_adjusted_close_for_date(
-    payload: object,
-    price_date: date,
-) -> float | None:
-    """Return adjusted close from payload for a specific date."""
-    adjusted_keys = ("adjusted_close", "adjustedClose", "adj_close", "adjClose")
-    for entry in _price_payload_entries(payload):
-        entry_date = _coerce_payload_date(entry.get("date"))
-        if entry_date != price_date:
-            continue
-        raw_value = next(
-            (entry.get(key) for key in adjusted_keys if entry.get(key) is not None),
-            None,
-        )
-        return _coerce_price_value(raw_value)
-    return None
-
-
-def _filter_price_payload_for_cutoff(payload: object, cutoff_date: date) -> object:
-    """Filter payload entries to dates on or before the cutoff."""
-    if isinstance(payload, list):
-        return [
-            entry
-            for entry in payload
-            if isinstance(entry, Mapping)
-            for entry_date in [_coerce_payload_date(entry.get("date"))]
-            if entry_date is not None and entry_date <= cutoff_date
-        ]
-    if isinstance(payload, Mapping):
-        return {
-            key: entry
-            for key, entry in payload.items()
-            if isinstance(entry, Mapping)
-            for entry_date in [_coerce_payload_date(entry.get("date"))]
-            if entry_date is not None and entry_date <= cutoff_date
-        }
-    return []
 
 
 def _filter_stale_tickers(

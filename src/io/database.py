@@ -4,10 +4,10 @@ import csv
 import json
 import logging
 from collections import Counter
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 from functools import partial
-from io import StringIO
 from itertools import chain
+from io import StringIO
 from typing import Iterable, Mapping
 
 from math import isclose
@@ -42,14 +42,6 @@ STATEMENT_NEGATIVE_LINE_ITEMS = {
     "balance": set(),
 }
 
-PRICE_FIELD_MAP: dict[str, tuple[str, ...]] = {
-    "open": ("open",),
-    "high": ("high",),
-    "low": ("low",),
-    "close": ("close",),
-    "adjusted_close": ("adjusted_close", "adjustedClose", "adj_close", "adjClose"),
-    "volume": ("volume",),
-}
 
 RETRIEVAL_COLUMN = "retrieval_date"
 SCRATCH_TABLE = "pipeline_scratch"
@@ -57,7 +49,6 @@ EXCHANGES_TABLE = "exchanges"
 PRIMARY_LISTING_MAP_TABLE = "primary_listing_map"
 UNIVERSE_TABLE = "universe"
 REFRESH_SCHEDULE_TABLE = "refresh_schedule"
-SYMBOL_INTEGRITY_TABLE = "symbol_integrity"
 EXCHANGE_LIST_COLUMNS = (
     "name",
     "operating_mic",
@@ -234,129 +225,6 @@ def get_latest_filing_date(engine: Engine, symbol: str) -> date | None:
     return None
 
 
-def get_latest_price_date(engine: Engine, symbol: str, provider: str) -> date | None:
-    """Fetch the most recent price date for a symbol/provider pair.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol to query.
-        provider (str): Provider name (e.g., "EODHD").
-
-    Returns:
-        date | None: Latest price date or None if missing.
-    """
-    query = text(
-        """
-        SELECT MAX(date) AS latest_date
-        FROM prices
-        WHERE symbol = :symbol
-          AND provider = :provider
-        """
-    )
-    with engine.begin() as conn:
-        result = conn.execute(query, {"symbol": symbol, "provider": provider}).scalar()
-    return _parse_date(result)
-
-
-def get_latest_price_date_any(engine: Engine, symbol: str) -> date | None:
-    """Fetch the most recent price date for a symbol across all providers.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol to query.
-
-    Returns:
-        date | None: Latest price date or None if missing.
-    """
-    query = text(
-        """
-        SELECT MAX(date) AS latest_date
-        FROM prices
-        WHERE symbol = :symbol
-        """
-    )
-    with engine.begin() as conn:
-        result = conn.execute(query, {"symbol": symbol}).scalar()
-    return _parse_date(result)
-
-
-def get_latest_price_date_before(
-    engine: Engine,
-    symbol: str,
-    cutoff_date: date,
-) -> date | None:
-    """Fetch the most recent price date before the cutoff for a symbol.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol to query.
-        cutoff_date (date): Exclusive cutoff date.
-
-    Returns:
-        date | None: Latest price date before the cutoff, or None if missing.
-    """
-    query = text(
-        """
-        SELECT MAX(date) AS latest_date
-        FROM prices
-        WHERE symbol = :symbol
-          AND date < :cutoff_date
-        """
-    )
-    with engine.begin() as conn:
-        result = conn.execute(
-            query,
-            {"symbol": symbol, "cutoff_date": cutoff_date},
-        ).scalar()
-    return _parse_date(result)
-
-
-def get_price_day_snapshot(engine: Engine, symbol: str, price_date: date) -> tuple[int, float | None]:
-    """Return the number of price rows and adjusted close for a symbol/date.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol to query.
-        price_date (date): Price date to inspect.
-
-    Returns:
-        tuple[int, float | None]: Row count and adjusted close when unique.
-    """
-    query = text(
-        """
-        SELECT adjusted_close
-        FROM prices
-        WHERE symbol = :symbol
-          AND date = :price_date
-        """
-    )
-    with engine.begin() as conn:
-        rows = conn.execute(query, {"symbol": symbol, "price_date": price_date}).all()
-    if len(rows) != 1:
-        return len(rows), None
-    return len(rows), _to_float(rows[0][0])
-
-
-def get_price_refresh_symbols(engine: Engine) -> list[str]:
-    """Return the union of financial facts symbols and filtered FOREX symbols.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-
-    Returns:
-        list[str]: Unique symbols eligible for price refresh.
-    """
-    financial_query = text("SELECT DISTINCT symbol FROM financial_facts")
-    with engine.begin() as conn:
-        financial_symbols = [
-            row[0]
-            for row in conn.execute(financial_query).all()
-            if isinstance(row[0], str)
-        ]
-    forex_symbols = get_filtered_universe_symbols(engine, exchange="FOREX")
-    return list({*financial_symbols, *forex_symbols})
-
-
 def get_filtered_universe_symbols(engine: Engine, exchange: str | None = None) -> list[str]:
     """Return universe symbols filtered by type and ISIN eligibility.
 
@@ -394,148 +262,51 @@ def get_filtered_universe_symbols(engine: Engine, exchange: str | None = None) -
     return [row[0] for row in rows if isinstance(row[0], str)]
 
 
-def get_filtered_universe_price_status(
-    engine: Engine,
-    cutoff_date: date,
-) -> list[dict[str, object]]:
-    """Return latest price dates for filtered universe symbols.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        cutoff_date (date): Latest acceptable price date (inclusive).
-
-    Returns:
-        list[dict[str, object]]: Symbol records with latest price date values.
-    """
+def get_latest_price_date(engine: Engine, symbol: str) -> date | None:
+    """Return the latest price date for a symbol across providers."""
     query = text(
-        f"""
-        WITH filtered_universe AS (
-            SELECT symbol
-            FROM {UNIVERSE_TABLE}
-            WHERE (symbol, exchange, retrieval_date) IN (
-                SELECT symbol, exchange, MAX(retrieval_date)
-                FROM {UNIVERSE_TABLE}
-                GROUP BY symbol, exchange
-            )
-              AND (
-                  UPPER(type) = 'CURRENCY'
-                  OR (
-                      UPPER(type) = 'COMMON STOCK'
-                      AND NULLIF(TRIM(isin), '') IS NOT NULL
-                  )
-              )
-        )
-        SELECT u.symbol AS symbol, MAX(p.date) AS latest_date
-        FROM filtered_universe u
-        LEFT JOIN prices p
-          ON p.symbol = u.symbol
-         AND p.date <= :cutoff_date
-        GROUP BY u.symbol
-        ORDER BY u.symbol
         """
-    )
-    with engine.begin() as conn:
-        rows = conn.execute(query, {"cutoff_date": cutoff_date}).all()
-    return [
-        {
-            "symbol": row[0],
-            "latest_date": _parse_date(row[1]),
-        }
-        for row in rows
-        if isinstance(row[0], str)
-    ]
-
-
-def get_symbol_failure_days(engine: Engine, symbol: str, pipeline: str) -> int:
-    """Return the number of failed days since the last success for a symbol/pipeline.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Symbol to check.
-        pipeline (str): Pipeline label (e.g., "prices").
-
-    Returns:
-        int: Number of distinct failure days since last success.
-    """
-    query = text(
-        f"""
-        WITH last_success AS (
-            SELECT MAX(retrieval_date) AS last_success
-            FROM {SYMBOL_INTEGRITY_TABLE}
-            WHERE symbol = :symbol
-              AND pipeline = :pipeline
-              AND status = 'success'
-        )
-        SELECT COUNT(DISTINCT DATE(retrieval_date)) AS failure_days
-        FROM {SYMBOL_INTEGRITY_TABLE}, last_success
+        SELECT MAX(date) AS latest_date
+        FROM prices
         WHERE symbol = :symbol
-          AND pipeline = :pipeline
-          AND status = 'failed'
-          AND (
-              last_success.last_success IS NULL
-              OR retrieval_date > last_success.last_success
-          )
         """
     )
     with engine.begin() as conn:
-        result = conn.execute(query, {"symbol": symbol, "pipeline": pipeline}).scalar()
-    try:
-        return int(result) if result is not None else 0
-    except (TypeError, ValueError):
-        return 0
+        result = conn.execute(query, {"symbol": symbol}).scalar()
+    if isinstance(result, date):
+        return result
+    return None
 
 
-def append_symbol_integrity_row(
+def get_price_day_snapshot(
     engine: Engine,
     symbol: str,
-    pipeline: str,
-    retrieval_date: datetime,
-    status: str,
-    error_code: str | None = None,
-    http_status: int | None = None,
-    message: str | None = None,
-) -> int:
-    """Append a symbol integrity record and return its assigned index."""
-    insert_sql = text(
-        f"""
-        INSERT INTO {SYMBOL_INTEGRITY_TABLE} (
-            index,
-            symbol,
-            pipeline,
-            retrieval_date,
-            status,
-            error_code,
-            http_status,
-            message
-        )
-        VALUES (
-            :index,
-            :symbol,
-            :pipeline,
-            :retrieval_date,
-            :status,
-            :error_code,
-            :http_status,
-            :message
-        )
+    price_date: date,
+) -> dict[str, float | None] | None:
+    """Return the latest price snapshot for a symbol/date."""
+    query = text(
+        """
+        SELECT open, high, low, close
+        FROM prices
+        WHERE symbol = :symbol
+          AND date = :price_date
+        ORDER BY retrieval_date DESC
+        LIMIT 1
         """
     )
     with engine.begin() as conn:
-        next_index = _next_symbol_integrity_index(conn)
-        conn.execute(
-            insert_sql,
-            {
-                "index": next_index,
-                "symbol": symbol,
-                "pipeline": pipeline,
-                "retrieval_date": retrieval_date,
-                "status": status,
-                "error_code": error_code,
-                "http_status": http_status,
-                "message": message,
-            },
-        )
-    return next_index
+        row = conn.execute(
+            query,
+            {"symbol": symbol, "price_date": price_date},
+        ).mappings().first()
+    if row is None:
+        return None
+    return {
+        "open": row.get("open"),
+        "high": row.get("high"),
+        "low": row.get("low"),
+        "close": row.get("close"),
+    }
 
 
 def get_exchange_codes(engine: Engine) -> list[str]:
@@ -805,19 +576,6 @@ def _postgres_schema_sql() -> str:
         status TEXT NOT NULL,
         PRIMARY KEY (index, pipeline, cause, retrieval_date)
     );
-    CREATE TABLE IF NOT EXISTS symbol_integrity (
-        index INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        pipeline TEXT NOT NULL,
-        retrieval_date TIMESTAMPTZ NOT NULL,
-        status TEXT NOT NULL,
-        error_code TEXT NULL,
-        http_status INTEGER NULL,
-        message TEXT NULL,
-        PRIMARY KEY (index, symbol, pipeline, retrieval_date)
-    );
-    CREATE INDEX IF NOT EXISTS IX_symbol_integrity_symbol_pipeline
-        ON symbol_integrity (symbol, pipeline, status, retrieval_date);
     """
 
 
@@ -888,337 +646,6 @@ def write_market_metrics(
         ]
         logger.info("Writing %d market metrics rows for %s", len(param_rows), symbol)
         conn.execute(insert_sql, param_rows)
-    return len(rows_to_insert)
-
-
-def write_prices(
-    engine: Engine,
-    symbol: str,
-    provider: str,
-    retrieval_date: datetime,
-    raw_data: object,
-) -> int:
-    """Write end-of-day price rows into the prices table.
-
-    Args:
-        engine (Engine): SQLAlchemy engine for Postgres.
-        symbol (str): Ticker symbol for the payload.
-        provider (str): Provider name (e.g., "EODHD").
-        retrieval_date (datetime): When the payload was retrieved.
-        raw_data (object): Raw provider payload for prices.
-
-    Returns:
-        int: Number of inserted rows.
-    """
-    rows = list(_iter_price_rows(symbol, provider, retrieval_date, raw_data))
-    if not rows:
-        return 0
-    insert_sql = text(
-        """
-        INSERT INTO prices (
-            symbol,
-            date,
-            retrieval_date,
-            provider,
-            open,
-            high,
-            low,
-            close,
-            adjusted_close,
-            volume
-        )
-        VALUES (
-            :symbol,
-            :date,
-            :retrieval_date,
-            :provider,
-            :open,
-            :high,
-            :low,
-            :close,
-            :adjusted_close,
-            :volume
-        )
-        """
-    )
-    match_columns = ("symbol", "date", "provider")
-    with engine.begin() as conn:
-        rows_to_insert = _filter_versioned_rows(
-            conn=conn,
-            table="prices",
-            rows=rows,
-            match_columns=match_columns,
-        )
-        if not rows_to_insert:
-            return 0
-        conn.execute(insert_sql, rows_to_insert)
-    return len(rows_to_insert)
-
-
-def parse_bulk_prices_csv(
-    csv_text: str,
-    retrieval_date: datetime,
-    provider: str,
-) -> tuple[list[dict[str, object]], dict[str, list[str]], int]:
-    """Parse bulk prices CSV into price rows and capture invalid symbols.
-
-    Args:
-        csv_text (str): Raw CSV payload.
-        retrieval_date (datetime): When the payload was retrieved.
-        provider (str): Provider name (e.g., "EODHD").
-
-    Returns:
-        tuple[list[dict[str, object]], dict[str, list[str]], int]: Rows, invalid symbol reasons,
-        and count of invalid rows without symbols.
-    """
-    rows: list[dict[str, object]] = []
-    invalid: dict[str, list[str]] = {}
-    invalid_unknown = 0
-    reader = csv.DictReader(StringIO(csv_text))
-    for entry in reader:
-        code = _normalize_share_code(entry.get("Code") or entry.get("code"))
-        exchange = _normalize_share_code(entry.get("Ex") or entry.get("EX") or entry.get("Exchange"))
-        price_date = _parse_date(entry.get("Date") or entry.get("date"))
-        if code is None or exchange is None or price_date is None:
-            invalid_unknown += 1
-            continue
-        symbol = f"{code}.{exchange}"
-        field_map = {
-            "open": entry.get("Open") or entry.get("open"),
-            "high": entry.get("High") or entry.get("high"),
-            "low": entry.get("Low") or entry.get("low"),
-            "close": entry.get("Close") or entry.get("close"),
-            "adjusted_close": entry.get("Adjusted_close")
-            or entry.get("Adjusted Close")
-            or entry.get("adjusted_close"),
-            "volume": entry.get("Volume") or entry.get("volume"),
-        }
-        parsed_fields = {field: _to_float(value) for field, value in field_map.items()}
-        missing_fields = [field for field, value in parsed_fields.items() if value is None]
-        if missing_fields:
-            invalid.setdefault(symbol, []).extend(missing_fields)
-            continue
-        rows.append(
-            {
-                "symbol": symbol,
-                "date": price_date,
-                "retrieval_date": retrieval_date,
-                "provider": provider,
-                **parsed_fields,
-            }
-        )
-    return rows, invalid, invalid_unknown
-
-
-def parse_bulk_dividends_csv(
-    csv_text: str,
-    retrieval_date: datetime,
-) -> tuple[list[dict[str, object]], dict[str, list[str]], int]:
-    """Parse bulk dividends CSV into dividend rows and capture invalid symbols."""
-    rows: list[dict[str, object]] = []
-    invalid: dict[str, list[str]] = {}
-    invalid_unknown = 0
-    reader = csv.DictReader(StringIO(csv_text))
-    for entry in reader:
-        code = _normalize_share_code(entry.get("Code") or entry.get("code"))
-        exchange = _normalize_share_code(entry.get("Ex") or entry.get("EX") or entry.get("Exchange"))
-        div_date = _parse_date(entry.get("Date") or entry.get("date"))
-        amount = _to_float(entry.get("Dividend") or entry.get("dividend"))
-        currency = _normalize_share_value(entry.get("Currency") or entry.get("currency"))
-        if code is None or exchange is None or div_date is None:
-            invalid_unknown += 1
-            continue
-        symbol = f"{code}.{exchange}"
-        missing_fields = []
-        if amount is None:
-            missing_fields.append("amount")
-        if currency is None:
-            missing_fields.append("currency")
-        if missing_fields:
-            invalid.setdefault(symbol, []).extend(missing_fields)
-            continue
-        rows.append(
-            {
-                "symbol": symbol,
-                "retrieval_date": retrieval_date,
-                "date": div_date,
-                "currency": currency,
-                "amount": amount,
-            }
-        )
-    return rows, invalid, invalid_unknown
-
-
-def parse_bulk_splits_csv(
-    csv_text: str,
-    retrieval_date: datetime,
-) -> tuple[list[dict[str, object]], dict[str, list[str]], int]:
-    """Parse bulk splits CSV into split rows and capture invalid symbols."""
-    rows: list[dict[str, object]] = []
-    invalid: dict[str, list[str]] = {}
-    invalid_unknown = 0
-    reader = csv.DictReader(StringIO(csv_text))
-    for entry in reader:
-        code = _normalize_share_code(entry.get("Code") or entry.get("code"))
-        exchange = _normalize_share_code(entry.get("Ex") or entry.get("EX") or entry.get("Exchange"))
-        split_date = _parse_date(entry.get("Date") or entry.get("date"))
-        split_ratio = entry.get("Split") or entry.get("split")
-        if code is None or exchange is None or split_date is None:
-            invalid_unknown += 1
-            continue
-        symbol = f"{code}.{exchange}"
-        new_shares = None
-        old_shares = None
-        if isinstance(split_ratio, str):
-            parts = [part.strip() for part in split_ratio.split("/") if part.strip()]
-            if len(parts) == 2:
-                new_shares = _to_float(parts[0])
-                old_shares = _to_float(parts[1])
-        missing_fields = []
-        if new_shares is None or old_shares is None:
-            missing_fields.append("split_ratio")
-        if missing_fields:
-            invalid.setdefault(symbol, []).extend(missing_fields)
-            continue
-        rows.append(
-            {
-                "symbol": symbol,
-                "retrieval_date": retrieval_date,
-                "date": split_date,
-                "optionable": None,
-                "old_shares": old_shares,
-                "new_shares": new_shares,
-            }
-        )
-    return rows, invalid, invalid_unknown
-
-
-def write_bulk_prices(
-    engine: Engine,
-    rows: list[dict[str, object]],
-) -> int:
-    """Write bulk price rows into the prices table."""
-    if not rows:
-        return 0
-    insert_sql = text(
-        """
-        INSERT INTO prices (
-            symbol,
-            date,
-            retrieval_date,
-            provider,
-            open,
-            high,
-            low,
-            close,
-            adjusted_close,
-            volume
-        )
-        VALUES (
-            :symbol,
-            :date,
-            :retrieval_date,
-            :provider,
-            :open,
-            :high,
-            :low,
-            :close,
-            :adjusted_close,
-            :volume
-        )
-        """
-    )
-    match_columns = ("symbol", "date", "provider")
-    with engine.begin() as conn:
-        rows_to_insert = _filter_versioned_rows(
-            conn=conn,
-            table="prices",
-            rows=rows,
-            match_columns=match_columns,
-        )
-        if not rows_to_insert:
-            return 0
-        conn.execute(insert_sql, rows_to_insert)
-    return len(rows_to_insert)
-
-
-def write_bulk_dividends(
-    engine: Engine,
-    rows: list[dict[str, object]],
-) -> int:
-    """Write bulk dividend rows into the dividends table."""
-    if not rows:
-        return 0
-    insert_sql = text(
-        """
-        INSERT INTO dividends (
-            symbol,
-            retrieval_date,
-            date,
-            currency,
-            amount
-        )
-        VALUES (
-            :symbol,
-            :retrieval_date,
-            :date,
-            :currency,
-            :amount
-        )
-        """
-    )
-    match_columns = ("symbol", "date")
-    with engine.begin() as conn:
-        rows_to_insert = _filter_versioned_rows(
-            conn=conn,
-            table="dividends",
-            rows=rows,
-            match_columns=match_columns,
-        )
-        if not rows_to_insert:
-            return 0
-        conn.execute(insert_sql, rows_to_insert)
-    return len(rows_to_insert)
-
-
-def write_bulk_splits(
-    engine: Engine,
-    rows: list[dict[str, object]],
-) -> int:
-    """Write bulk split rows into the splits table."""
-    if not rows:
-        return 0
-    insert_sql = text(
-        """
-        INSERT INTO splits (
-            symbol,
-            retrieval_date,
-            date,
-            optionable,
-            old_shares,
-            new_shares
-        )
-        VALUES (
-            :symbol,
-            :retrieval_date,
-            :date,
-            :optionable,
-            :old_shares,
-            :new_shares
-        )
-        """
-    )
-    match_columns = ("symbol", "date")
-    with engine.begin() as conn:
-        rows_to_insert = _filter_versioned_rows(
-            conn=conn,
-            table="splits",
-            rows=rows,
-            match_columns=match_columns,
-        )
-        if not rows_to_insert:
-            return 0
-        conn.execute(insert_sql, rows_to_insert)
     return len(rows_to_insert)
 
 
@@ -1566,27 +993,6 @@ def get_unmatched_open_refreshes(engine: Engine, pipeline: str) -> list[dict[str
     ]
 
 
-def get_latest_refresh_retrieval(
-    engine: Engine,
-    pipeline: str,
-    status: str | None = None,
-) -> datetime | None:
-    """Return the latest refresh retrieval timestamp for a pipeline/status."""
-    status_clause = "AND status = :status" if status is not None else ""
-    query = text(
-        f"""
-        SELECT MAX(retrieval_date) AS latest_retrieval
-        FROM {REFRESH_SCHEDULE_TABLE}
-        WHERE pipeline = :pipeline
-        {status_clause}
-        """
-    )
-    params: dict[str, object] = {"pipeline": pipeline}
-    if status is not None:
-        params["status"] = status
-    with engine.begin() as conn:
-        result = conn.execute(query, params).scalar()
-    return _parse_datetime(result)
 
 
 def append_refresh_schedule_row(
@@ -1907,6 +1313,372 @@ def write_corporate_actions_calendar(
             else:
                 logger.debug("No new dividends calendar rows after deduplication")
     return inserted
+
+
+def parse_bulk_dividends_csv(
+    payload: str,
+    target_date: date | None = None,
+) -> list[dict[str, object]]:
+    """Parse a bulk dividends CSV payload into rows for insertion.
+
+    Args:
+        payload (str): Raw CSV payload string.
+        target_date (date | None): Latest acceptable date; rows after are skipped.
+
+    Returns:
+        list[dict[str, object]]: Parsed rows with symbol, date, amount, and currency.
+    """
+    if not payload.strip():
+        return []
+    reader = csv.DictReader(StringIO(payload))
+    rows: list[dict[str, object]] = []
+    for entry in reader:
+        if not isinstance(entry, Mapping):
+            continue
+        code = _normalize_text_value(_first_present(entry, ("Code", "code", "symbol", "Symbol")))
+        exchange = _normalize_text_value(_first_present(entry, ("Ex", "ex", "Exchange", "exchange")))
+        raw_date = _first_present(entry, ("Date", "date"))
+        raw_amount = _first_present(entry, ("Dividend", "dividend", "Amount", "amount"))
+        currency = _normalize_text_value(_first_present(entry, ("Currency", "currency")))
+        entry_date = _parse_date(raw_date)
+        amount = _to_float(raw_amount)
+        if code is None or exchange is None or entry_date is None or amount is None:
+            continue
+        if target_date is not None and entry_date > target_date:
+            continue
+        rows.append(
+            {
+                "symbol": f"{code}.{exchange}",
+                "date": entry_date,
+                "currency": currency,
+                "amount": amount,
+            }
+        )
+    return rows
+
+
+def _parse_split_ratio(value: object) -> tuple[float, float] | None:
+    """Parse split ratio strings like '1/5' into old/new shares."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parts = stripped.split("/")
+        if len(parts) != 2:
+            return None
+        old_shares = _to_float(parts[0])
+        new_shares = _to_float(parts[1])
+        if old_shares is None or new_shares is None:
+            return None
+        return old_shares, new_shares
+    return None
+
+
+def parse_bulk_splits_csv(
+    payload: str,
+    target_date: date | None = None,
+) -> list[dict[str, object]]:
+    """Parse a bulk splits CSV payload into rows for insertion.
+
+    Args:
+        payload (str): Raw CSV payload string.
+        target_date (date | None): Latest acceptable date; rows after are skipped.
+
+    Returns:
+        list[dict[str, object]]: Parsed rows with symbol, date, and split ratio.
+    """
+    if not payload.strip():
+        return []
+    reader = csv.DictReader(StringIO(payload))
+    rows: list[dict[str, object]] = []
+    for entry in reader:
+        if not isinstance(entry, Mapping):
+            continue
+        code = _normalize_text_value(_first_present(entry, ("Code", "code", "symbol", "Symbol")))
+        exchange = _normalize_text_value(_first_present(entry, ("Ex", "ex", "Exchange", "exchange")))
+        raw_date = _first_present(entry, ("Date", "date"))
+        raw_split = _first_present(entry, ("Split", "split"))
+        entry_date = _parse_date(raw_date)
+        ratio = _parse_split_ratio(raw_split)
+        if code is None or exchange is None or entry_date is None or ratio is None:
+            continue
+        if target_date is not None and entry_date > target_date:
+            continue
+        old_shares, new_shares = ratio
+        rows.append(
+            {
+                "symbol": f"{code}.{exchange}",
+                "date": entry_date,
+                "old_shares": old_shares,
+                "new_shares": new_shares,
+                "optionable": None,
+            }
+        )
+    return rows
+
+
+def write_bulk_dividends(
+    engine: Engine,
+    retrieval_date: datetime,
+    payload: str,
+    target_date: date | None = None,
+) -> int:
+    """Write bulk dividends payload rows to Postgres.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (str): Raw CSV payload string.
+        target_date (date | None): Latest acceptable date; rows after are skipped.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows_raw = parse_bulk_dividends_csv(payload, target_date=target_date)
+    if not rows_raw:
+        logger.debug("Bulk dividends payload contained no usable rows")
+        return 0
+    rows = [
+        {
+            "symbol": row["symbol"],
+            RETRIEVAL_COLUMN: retrieval_date,
+            "date": row["date"],
+            "currency": row.get("currency"),
+            "amount": row.get("amount"),
+            "period": None,
+            "declaration_date": None,
+            "record_date": None,
+            "payment_date": None,
+        }
+        for row in rows_raw
+    ]
+    unique_rows: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    for row in rows:
+        key = (row.get("symbol"), row.get("date"))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rows.append(row)
+    insert_sql = text(
+        """
+        INSERT INTO dividends (
+            symbol,
+            retrieval_date,
+            date,
+            currency,
+            amount,
+            period,
+            declaration_date,
+            record_date,
+            payment_date
+        )
+        VALUES (
+            :symbol,
+            :retrieval_date,
+            :date,
+            :currency,
+            :amount,
+            :period,
+            :declaration_date,
+            :record_date,
+            :payment_date
+        )
+        """
+    )
+    with engine.begin() as conn:
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="dividends",
+            rows=unique_rows,
+            match_columns=("symbol", "date"),
+        )
+        logger.debug(
+            "Bulk dividends rows: %d candidate, %d new after dedup",
+            len(unique_rows),
+            len(rows_to_insert),
+        )
+        if not rows_to_insert:
+            logger.debug("No new bulk dividends rows after deduplication")
+            return 0
+        logger.info("Writing %d bulk dividends rows", len(rows_to_insert))
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
+
+
+def write_bulk_splits(
+    engine: Engine,
+    retrieval_date: datetime,
+    payload: str,
+    target_date: date | None = None,
+) -> int:
+    """Write bulk splits payload rows to Postgres.
+
+    Args:
+        engine (Engine): SQLAlchemy engine for Postgres.
+        retrieval_date (datetime): When the payload was retrieved.
+        payload (str): Raw CSV payload string.
+        target_date (date | None): Latest acceptable date; rows after are skipped.
+
+    Returns:
+        int: Number of inserted rows.
+    """
+    rows_raw = parse_bulk_splits_csv(payload, target_date=target_date)
+    if not rows_raw:
+        logger.debug("Bulk splits payload contained no usable rows")
+        return 0
+    rows = [
+        {
+            "symbol": row["symbol"],
+            RETRIEVAL_COLUMN: retrieval_date,
+            "date": row["date"],
+            "optionable": row.get("optionable"),
+            "old_shares": row.get("old_shares"),
+            "new_shares": row.get("new_shares"),
+        }
+        for row in rows_raw
+    ]
+    unique_rows: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    for row in rows:
+        key = (row.get("symbol"), row.get("date"))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rows.append(row)
+    insert_sql = text(
+        """
+        INSERT INTO splits (
+            symbol,
+            retrieval_date,
+            date,
+            optionable,
+            old_shares,
+            new_shares
+        )
+        VALUES (
+            :symbol,
+            :retrieval_date,
+            :date,
+            :optionable,
+            :old_shares,
+            :new_shares
+        )
+        """
+    )
+    with engine.begin() as conn:
+        rows_to_insert = _filter_versioned_rows(
+            conn=conn,
+            table="splits",
+            rows=unique_rows,
+            match_columns=("symbol", "date"),
+        )
+        logger.debug(
+            "Bulk splits rows: %d candidate, %d new after dedup",
+            len(unique_rows),
+            len(rows_to_insert),
+        )
+        if not rows_to_insert:
+            logger.debug("No new bulk splits rows after deduplication")
+            return 0
+        logger.info("Writing %d bulk splits rows", len(rows_to_insert))
+        conn.execute(insert_sql, rows_to_insert)
+    return len(rows_to_insert)
+
+
+def parse_price_history_csv(
+    payload: str,
+    symbol: str,
+    provider: str,
+    retrieval_date: datetime,
+    min_date_exclusive: date | None = None,
+) -> list[dict[str, object]]:
+    """Parse price history CSV payload into row dictionaries.
+
+    Args:
+        payload (str): Raw CSV payload string.
+        symbol (str): Fully qualified symbol (e.g., AAPL.US).
+        provider (str): Provider name.
+        retrieval_date (datetime): Retrieval timestamp.
+        min_date_exclusive (date | None): Skip dates <= this value.
+
+    Returns:
+        list[dict[str, object]]: Parsed price rows.
+    """
+    if not payload.strip():
+        return []
+    reader = csv.DictReader(StringIO(payload))
+    rows: list[dict[str, object]] = []
+    for entry in reader:
+        if not isinstance(entry, Mapping):
+            continue
+        entry_date = _parse_date(_first_present(entry, ("Date", "date")))
+        if entry_date is None:
+            continue
+        if min_date_exclusive is not None and entry_date <= min_date_exclusive:
+            continue
+        rows.append(
+            {
+                "symbol": symbol,
+                "date": entry_date,
+                RETRIEVAL_COLUMN: retrieval_date,
+                "provider": provider,
+                "open": _to_float(_first_present(entry, ("Open", "open"))),
+                "high": _to_float(_first_present(entry, ("High", "high"))),
+                "low": _to_float(_first_present(entry, ("Low", "low"))),
+                "close": _to_float(_first_present(entry, ("Close", "close"))),
+                "adjusted_close": _to_float(
+                    _first_present(entry, ("Adjusted_close", "Adjusted Close", "adjusted_close"))
+                ),
+                "volume": _to_float(_first_present(entry, ("Volume", "volume"))),
+            }
+        )
+    return rows
+
+
+def write_price_history(engine: Engine, rows: list[dict[str, object]]) -> int:
+    """Write price history rows to Postgres."""
+    if not rows:
+        return 0
+    unique_rows: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    for row in rows:
+        key = (row.get("symbol"), row.get("date"))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rows.append(row)
+    insert_sql = text(
+        """
+        INSERT INTO prices (
+            symbol,
+            date,
+            retrieval_date,
+            provider,
+            open,
+            high,
+            low,
+            close,
+            adjusted_close,
+            volume
+        )
+        VALUES (
+            :symbol,
+            :date,
+            :retrieval_date,
+            :provider,
+            :open,
+            :high,
+            :low,
+            :close,
+            :adjusted_close,
+            :volume
+        )
+        """
+    )
+    with engine.begin() as conn:
+        conn.execute(insert_sql, unique_rows)
+    return len(unique_rows)
 
 
 def _exchange_rows(
@@ -2656,60 +2428,6 @@ def _quote_identifier(identifier: str) -> str:
     return f'"{escaped}"'
 
 
-def _iter_price_rows(
-    symbol: str,
-    provider: str,
-    retrieval_date: datetime,
-    raw_data: object,
-) -> Iterable[dict[str, object]]:
-    """Yield price rows from an EODHD end-of-day payload.
-
-    Args:
-        symbol (str): Ticker symbol for the payload.
-        provider (str): Provider name (e.g., "EODHD").
-        retrieval_date (datetime): When the payload was retrieved.
-        raw_data (object): Raw provider payload for prices.
-
-    Returns:
-        Iterable[dict[str, object]]: Row dictionaries for insertion.
-    """
-    base = {
-        "symbol": symbol,
-        "retrieval_date": retrieval_date,
-        "provider": provider,
-    }
-    return [
-        {
-            **base,
-            "date": price_date,
-            **{
-                field: _first_value(entry, keys)
-                for field, keys in PRICE_FIELD_MAP.items()
-            },
-        }
-        for entry in _price_entries(raw_data)
-        if isinstance(entry, Mapping)
-        for price_date in [_parse_date(entry.get("date"))]
-        if price_date is not None
-    ]
-
-
-def _price_entries(raw_data: object) -> Iterable[Mapping[str, object]]:
-    """Normalize price payloads into an iterable of entry mappings.
-
-    Args:
-        raw_data (object): Raw price payload.
-
-    Returns:
-        Iterable[Mapping[str, object]]: Iterable of entry mappings.
-    """
-    if isinstance(raw_data, list):
-        return raw_data
-    if isinstance(raw_data, Mapping):
-        return raw_data.values()
-    return []
-
-
 def write_financial_facts(
     engine: Engine,
     symbol: str,
@@ -3250,19 +2968,6 @@ def _next_refresh_index(conn: Connection) -> int:
         return 0
 
 
-def _next_symbol_integrity_index(conn: Connection) -> int:
-    """Return the next available symbol integrity index."""
-    result = conn.execute(
-        text(f"SELECT MAX(index) FROM {SYMBOL_INTEGRITY_TABLE}")
-    ).scalar()
-    if result is None:
-        return 0
-    try:
-        return int(result) + 1
-    except (TypeError, ValueError):
-        return 0
-
-
 def _filter_versioned_rows(
     conn: Connection,
     table: str,
@@ -3609,23 +3314,4 @@ def _parse_date(value: object) -> date | None:
                 return datetime.fromisoformat(normalized).date()
             except ValueError:
                 return None
-    return None
-
-
-def _parse_datetime(value: object) -> datetime | None:
-    """Parse a datetime from ISO string values."""
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, date):
-        return datetime.combine(value, time.min, tzinfo=UTC)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        normalized = stripped[:-1] + "+00:00" if stripped.endswith("Z") else stripped
-        try:
-            parsed = datetime.fromisoformat(normalized)
-        except ValueError:
-            return None
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     return None

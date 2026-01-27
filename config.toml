@@ -7,7 +7,3 @@ lookahead_days = 3
 
 [universe]
 refresh_days = 30
-
-[prices]
-max_symbols_for_prices = -1
-days_stale = 7

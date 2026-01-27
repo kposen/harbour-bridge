@@ -100,33 +100,6 @@ def save_raw_payload(run_dir: Path, ticker: str, payload: dict[str, object]) -> 
     return path
 
 
-def save_price_payload(run_dir: Path, ticker: str, payload: object) -> Path:
-    """Persist the raw price payload to the run data directory.
-
-    Args:
-        run_dir (Path): Run-specific data directory.
-        ticker (str): Ticker symbol for the payload.
-        payload (object): Raw provider payload for prices.
-
-    Returns:
-        Path: Path to the saved CSV payload.
-    """
-    normalized = _normalize_ticker(ticker)
-    path = run_dir / f"{normalized}.prices.csv"
-    if isinstance(payload, str):
-        path.write_text(payload, encoding="utf-8")
-        logger.debug("Saved price payload to %s", path)
-        return path
-    logger.warning(
-        "Price payload for %s is not raw CSV text; writing JSON to %s",
-        ticker,
-        path,
-    )
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    logger.debug("Saved price payload to %s", path)
-    return path
-
-
 def save_upcoming_earnings_payload(run_dir: Path, payload: object) -> Path:
     """Persist the upcoming earnings calendar payload to the run data directory.
 
@@ -176,6 +149,54 @@ def save_upcoming_dividends_payload(run_dir: Path, payload_date: date, payload: 
     return path
 
 
+def save_bulk_dividends_payload(
+    run_dir: Path,
+    exchange_code: str,
+    payload_date: date,
+    payload: str,
+) -> Path:
+    """Persist the bulk dividends CSV payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        exchange_code (str): Exchange code for the payload.
+        payload_date (date): Date for the bulk dividends payload.
+        payload (str): Raw CSV payload string.
+
+    Returns:
+        Path: Path to the saved CSV payload.
+    """
+    normalized = exchange_code.strip().upper()
+    path = run_dir / f"bulk-dividends.{normalized}.{payload_date.isoformat()}.csv"
+    path.write_text(payload, encoding="utf-8")
+    logger.debug("Saved bulk dividends payload to %s", path)
+    return path
+
+
+def save_bulk_splits_payload(
+    run_dir: Path,
+    exchange_code: str,
+    payload_date: date,
+    payload: str,
+) -> Path:
+    """Persist the bulk splits CSV payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        exchange_code (str): Exchange code for the payload.
+        payload_date (date): Date for the bulk splits payload.
+        payload (str): Raw CSV payload string.
+
+    Returns:
+        Path: Path to the saved CSV payload.
+    """
+    normalized = exchange_code.strip().upper()
+    path = run_dir / f"bulk-splits.{normalized}.{payload_date.isoformat()}.csv"
+    path.write_text(payload, encoding="utf-8")
+    logger.debug("Saved bulk splits payload to %s", path)
+    return path
+
+
 def save_exchanges_list_payload(run_dir: Path, payload: object) -> Path:
     """Persist the exchanges list payload to the run data directory.
 
@@ -207,6 +228,24 @@ def save_exchange_shares_payload(run_dir: Path, exchange_code: str, payload: obj
     path = run_dir / f"shares.{normalized}.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     logger.debug("Saved share universe payload to %s", path)
+    return path
+
+
+def save_price_history_payload(run_dir: Path, symbol: str, payload: str) -> Path:
+    """Persist the price history CSV payload to the run data directory.
+
+    Args:
+        run_dir (Path): Run-specific data directory.
+        symbol (str): Symbol for the payload.
+        payload (str): Raw CSV payload string.
+
+    Returns:
+        Path: Path to the saved CSV payload.
+    """
+    normalized = _normalize_ticker(symbol)
+    path = run_dir / f"{normalized}.prices.csv"
+    path.write_text(payload, encoding="utf-8")
+    logger.debug("Saved price history payload to %s", path)
     return path
 
 

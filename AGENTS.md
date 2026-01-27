@@ -5,9 +5,10 @@
 - Keep data files in `data/` and assets in `assets/` to avoid mixing them with source code.
 - Use `docs/` for model references, research files, and user-facing documentation.
 - Run outputs are stored under `results/<yyyymmdd-hhmmss>` with logs and Excel exports.
-- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`, `*.prices.csv`,
+- Raw payloads are stored under `data/<yyyymmdd-hhmmss>` as `*.fundamentals.json`,
   `upcoming-earnings.json`, `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`,
-  `exchanges-list.json`, and `shares.<EXCHANGE>.json`.
+  `bulk-dividends.<EXCHANGE>.<YYYY-MM-DD>.csv`, `bulk-splits.<EXCHANGE>.<YYYY-MM-DD>.csv`,
+  `*.prices.csv`, `exchanges-list.json`, and `shares.<EXCHANGE>.json`.
 - Normalized JSON models are stored under `data/<TICKER>.json`.
 
 ## Build, Test, and Development Commands
@@ -22,8 +23,6 @@
 - Configure float comparison tolerances in `config.toml`.
 - Configure calendar lookahead days in `config.toml` (`calendar.lookahead_days`, capped at 30).
 - Configure share universe refresh cadence in `config.toml` (`universe.refresh_days`, default 30).
-- Configure price refresh cap in `config.toml` (`prices.max_symbols_for_prices`, default 10, -1 unlimited).
-- Configure stale price threshold in `config.toml` (`prices.days_stale`, default 7).
 - Preflight checks validate DB connectivity and run a write/read/delete round-trip
   on `pipeline_scratch` before download/forecast access.
 
@@ -50,4 +49,3 @@
 
 ## Agent-Specific Instructions
 - Keep `AGENTS.md` updated as the repository gains structure, tooling, and conventions.
-- Symbol integrity events are tracked in the `symbol_integrity` table.

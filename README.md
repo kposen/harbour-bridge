@@ -51,21 +51,19 @@ shell.
 - `calendar.lookahead_days`: Optional. Days to fetch corporate action calendars
   (clamped to 1-30 by the pipeline).
 - `universe.refresh_days`: Optional. Share universe refresh cadence in days.
-- `prices.max_symbols_for_prices`: Optional. Max symbols to refresh prices per run
-  (`-1` means unlimited).
-- `prices.days_stale`: Optional. Days since last price update before triggering
-  a full-history refresh (default 7).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 
 ## Data Flow
 
-1. **Download**: `download` fetches fundamentals, prices, calendars, and exchange lists.
+1. **Download**: `download` fetches fundamentals, calendars, and exchange lists.
 2. **Persist raw payloads**: Stored under `data/<timestamp>` for each run, including
-   `*.fundamentals.json`, `*.prices.csv`, `upcoming-earnings.json`,
-   `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`, and
-   `exchanges-list.json`.
-3. **Database**: Reported facts and price history are written to Postgres.
+   `*.fundamentals.json`, `upcoming-earnings.json`,
+   `upcoming-splits.json`, `upcoming-dividends-YYYY-MM-DD.json`,
+   `bulk-dividends.<EXCHANGE>.<YYYY-MM-DD>.csv`,
+   `bulk-splits.<EXCHANGE>.<YYYY-MM-DD>.csv`,
+   `*.prices.csv`, and `exchanges-list.json`.
+3. **Database**: Reported facts are written to Postgres.
 4. **Forecast**: `forecast` loads reported facts from Postgres, runs
    `generate_forecast`, and exports reports.
 5. **Outputs**: Excel exports and debug logs are written to `results/<timestamp>`.
@@ -74,11 +72,10 @@ shell.
 
 If you want to persist normalized facts to Postgres, apply the schema in
 `docs/sql/schema.sql`, set `HARBOUR_BRIDGE_DB_URL`, and use the helpers in `src/io/database.py` to insert rows
-into `financial_facts` and `prices`. The primary key for `financial_facts`
+into `financial_facts`. The primary key for `financial_facts`
 includes symbol, fiscal date, filing date, retrieval date, period type,
 statement, line item, and value source to preserve versions and reported vs
-calculated values. The primary key for `prices` includes symbol, date,
-retrieval_date, and provider for versioned price history.
+calculated values.
 
 The `download` and `forecast` commands run preflight checks before accessing
 Postgres. This validates connectivity and performs a write/read/delete round-trip
@@ -86,8 +83,6 @@ against a scratch table named `pipeline_scratch`. Failures abort the run.
 The exchange list is stored in `exchanges` with explicit columns for
 `name`, `operating_mic`, `country`, `currency`, `country_iso2`, and
 `country_iso3`.
-Symbol integrity events are stored in `symbol_integrity` for auditability
-(success, failures, skips).
 
 ## Notes
 
