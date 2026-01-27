@@ -6,7 +6,7 @@ import os
 import random
 import sys
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from functools import partial
 from math import isclose
 from pathlib import Path
@@ -20,6 +20,7 @@ from src.config import (
     get_calendar_lookahead_days,
     get_database_tolerances,
     get_max_symbols_for_prices,
+    get_prices_days_stale,
     get_universe_refresh_days,
 )
 
@@ -29,10 +30,8 @@ from src.io.database import (
     ensure_schema,
     get_engine,
     get_latest_filing_date,
-    get_latest_price_date,
     get_latest_price_date_before,
-    get_price_day_snapshot,
-    get_price_refresh_symbols,
+    get_filtered_universe_price_status,
     get_symbol_failure_days,
     get_symbols_with_history,
     get_exchange_codes,
@@ -40,6 +39,9 @@ from src.io.database import (
     load_historic_model_from_db,
     run_database_preflight,
     append_refresh_schedule_row,
+    parse_bulk_dividends_csv,
+    parse_bulk_prices_csv,
+    parse_bulk_splits_csv,
     write_corporate_actions_calendar,
     write_exchange_list,
     write_holders,
@@ -47,6 +49,9 @@ from src.io.database import (
     write_insider_transactions,
     write_listings,
     write_market_metrics,
+    write_bulk_dividends,
+    write_bulk_prices,
+    write_bulk_splits,
     write_prices,
     write_reported_facts,
     write_share_universe,
@@ -141,6 +146,16 @@ class PriceFetchResult:
     http_status: int | None
 
 
+@dataclass(frozen=True)
+class BulkFetchResult:
+    """Container for bulk CSV fetch results."""
+
+    payload: str | None
+    error_code: str | None
+    message: str | None
+    http_status: int | None
+
+
 def _fetch_prices_result(ticker: str, start_date: date | None) -> PriceFetchResult:
     """Fetch end-of-day prices for a ticker with error details."""
     api_key = os.getenv("EODHD_API_KEY")
@@ -211,6 +226,73 @@ def fetch_prices(ticker: str, start_date: date | None) -> object | None:
     if result.error_code is not None:
         logger.info("Price API request failed for %s: %s", ticker, result.message)
     return result.payload
+
+
+def _fetch_bulk_csv(
+    exchange_code: str,
+    payload_date: date,
+    data_type: str | None,
+) -> BulkFetchResult:
+    """Fetch bulk CSV data for an exchange and date."""
+    api_key = os.getenv("EODHD_API_KEY")
+    if not api_key:
+        raise ValueError("EODHD_API_KEY is not set")
+    normalized = exchange_code.strip().upper()
+    if not normalized:
+        return BulkFetchResult(
+            payload=None,
+            error_code="invalid_exchange",
+            message="Exchange code is empty",
+            http_status=None,
+        )
+    params: dict[str, str] = {
+        "api_token": api_key,
+        "date": payload_date.isoformat(),
+    }
+    if data_type is not None:
+        params["type"] = data_type
+    try:
+        response = requests.get(
+            f"https://eodhd.com/api/eod-bulk-last-day/{normalized}",
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        return BulkFetchResult(
+            payload=None,
+            error_code="http_error",
+            message=str(exc),
+            http_status=status,
+        )
+    except requests.RequestException as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        return BulkFetchResult(
+            payload=None,
+            error_code="request_error",
+            message=str(exc),
+            http_status=status,
+        )
+    text_payload = response.text
+    if not text_payload.strip():
+        return BulkFetchResult(payload="", error_code=None, message=None, http_status=None)
+    trimmed = text_payload.lstrip()
+    if trimmed.startswith("{") or trimmed.startswith("["):
+        try:
+            json_payload = response.json()
+        except ValueError:
+            json_payload = None
+        if isinstance(json_payload, dict) and any(
+            key in json_payload for key in ("Error", "error", "message")
+        ):
+            return BulkFetchResult(
+                payload=None,
+                error_code="provider_error",
+                message=str(json_payload),
+                http_status=response.status_code,
+            )
+    return BulkFetchResult(payload=text_payload, error_code=None, message=None, http_status=None)
 
 
 def _fetch_calendar(endpoint: str, label: str, start_date: date, end_date: date) -> object | None:
@@ -601,162 +683,199 @@ def run_download_pipeline(
     if inserted == 0:
         logger.info("No corporate actions calendar rows inserted")
     provider = "EODHD"
-    price_cutoff = run_retrieval.date()
+    bulk_target = _bulk_target_date(run_retrieval)
+    stale_days = get_prices_days_stale()
+    if stale_days < 0:
+        logger.warning("Invalid prices.days_stale=%d; using 0", stale_days)
+        stale_days = 0
     max_price_symbols = get_max_symbols_for_prices()
-    price_candidates = _select_price_refresh_candidates(engine, max_price_symbols, price_cutoff)
-    if not price_candidates:
-        logger.info("No symbols selected for price refresh; skipping price update")
+    logger.info("Bulk price target date: %s", bulk_target)
+    exchange_codes = get_exchange_codes(engine)
+    bulk_failures: list[str] = []
+    integrity_skips: list[str] = []
+    dividend_symbols: set[str] = set()
+    split_symbols: set[str] = set()
+    trigger_invalid_symbols: set[str] = set()
+    bulk_dividend_inserts = 0
+    bulk_split_inserts = 0
+    if not exchange_codes:
+        logger.info("No exchanges available for bulk price/dividend/split updates")
     else:
-        logger.info("Starting price refresh pipeline for %d symbols", len(price_candidates))
-    price_total = len(price_candidates)
-    price_failures = 0
-    price_skipped = 0
-    price_no_new = 0
-    price_updates = 0
-    price_full_history = 0
-    price_overlap_refetch = 0
-    price_attempted = 0
-    price_iterator = tqdm(
-        price_candidates,
-        total=price_total,
-        desc="Prices",
-        unit="symbol",
-        ascii=True,
-        disable=not sys.stderr.isatty(),
+        logger.info("Starting bulk dividends/splits download for %d exchanges", len(exchange_codes))
+    for exchange_code in exchange_codes:
+        dividends_result = _fetch_bulk_csv(exchange_code, bulk_target, "dividends")
+        if dividends_result.payload is None:
+            bulk_failures.append(f"dividends:{exchange_code}")
+            logger.warning(
+                "Bulk dividends download failed for %s: %s",
+                exchange_code,
+                dividends_result.message,
+            )
+        else:
+            rows, invalid_map, invalid_unknown = parse_bulk_dividends_csv(
+                dividends_result.payload,
+                run_retrieval,
+            )
+            valid_rows = [
+                row
+                for row in rows
+                for row_date in [row.get("date")]
+                if isinstance(row_date, date) and row_date <= bulk_target
+            ]
+            _record_bulk_invalids("dividends", invalid_map, invalid_unknown, trigger_invalid_symbols)
+            bulk_dividend_inserts += write_bulk_dividends(engine, valid_rows)
+            dividend_symbols.update(
+                row_symbol
+                for row in valid_rows
+                for row_date in [row.get("date")]
+                for row_symbol in [row.get("symbol")]
+                if isinstance(row_date, date)
+                and row_date == bulk_target
+                and isinstance(row_symbol, str)
+            )
+        splits_result = _fetch_bulk_csv(exchange_code, bulk_target, "splits")
+        if splits_result.payload is None:
+            bulk_failures.append(f"splits:{exchange_code}")
+            logger.warning(
+                "Bulk splits download failed for %s: %s",
+                exchange_code,
+                splits_result.message,
+            )
+        else:
+            rows, invalid_map, invalid_unknown = parse_bulk_splits_csv(
+                splits_result.payload,
+                run_retrieval,
+            )
+            valid_rows = [
+                row
+                for row in rows
+                for row_date in [row.get("date")]
+                if isinstance(row_date, date) and row_date <= bulk_target
+            ]
+            _record_bulk_invalids("splits", invalid_map, invalid_unknown, trigger_invalid_symbols)
+            bulk_split_inserts += write_bulk_splits(engine, valid_rows)
+            split_symbols.update(
+                row_symbol
+                for row in valid_rows
+                for row_date in [row.get("date")]
+                for row_symbol in [row.get("symbol")]
+                if isinstance(row_date, date)
+                and row_date == bulk_target
+                and isinstance(row_symbol, str)
+            )
+    trigger_symbols = dividend_symbols | split_symbols | trigger_invalid_symbols
+    full_refresh_symbols = _select_full_refresh_symbols(
+        engine=engine,
+        cutoff_date=bulk_target,
+        stale_days=stale_days,
+        max_symbols=max_price_symbols,
+        trigger_symbols=trigger_symbols,
     )
-    for candidate in price_iterator:
-        symbol = candidate.get("symbol")
-        if not isinstance(symbol, str) or not symbol:
-            logger.warning("Skipping price refresh for invalid symbol entry: %s", candidate)
-            continue
-        failure_days = get_symbol_failure_days(engine, symbol, pipeline="prices")
-        if failure_days >= 7:
-            price_skipped += 1
-            logger.warning(
-                "Skipping price refresh for %s after %d failed days",
-                symbol,
-                failure_days,
-            )
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="skipped",
-                error_code="max_failures",
-                message=f"Skipped after {failure_days} failed days",
-            )
-            continue
-        price_attempted += 1
-        latest_date = candidate.get("latest_date")
-        start_date = latest_date if isinstance(latest_date, date) else None
-        db_adjusted: float | None = None
-        if start_date is not None:
-            row_count, db_adjusted = get_price_day_snapshot(engine, symbol, start_date)
-            if row_count != 1 or db_adjusted is None:
-                start_date = None
-        if start_date is None:
-            price_full_history += 1
-        result = _fetch_prices_result(symbol, start_date)
-        if result.payload is None:
-            price_failures += 1
-            logger.warning(
-                "Skipping price persistence for %s due to fetch error: %s",
-                symbol,
-                result.message,
-            )
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="failed",
-                error_code=result.error_code,
-                http_status=result.http_status,
-                message=result.message,
-            )
-            continue
-        price_payload = _filter_price_payload_for_cutoff(result.payload, price_cutoff)
-        if (isinstance(price_payload, list) and not price_payload) or (
-            isinstance(price_payload, dict) and not price_payload
-        ):
-            price_no_new += 1
-            append_symbol_integrity_row(
-                engine=engine,
-                symbol=symbol,
-                pipeline="prices",
-                retrieval_date=run_retrieval,
-                status="success",
-            )
-            continue
-        if start_date is not None:
-            payload_adjusted = _payload_adjusted_close_for_date(price_payload, start_date)
-            if not _prices_match(db_adjusted, payload_adjusted):
-                price_overlap_refetch += 1
-                logger.warning(
-                    "Adjusted close mismatch for %s on %s; fetching full history",
-                    symbol,
-                    start_date,
-                )
-                refetch = _fetch_prices_result(symbol, None)
-                if refetch.payload is None:
-                    price_failures += 1
-                    logger.warning(
-                        "Skipping price persistence for %s due to fetch error: %s",
-                        symbol,
-                        refetch.message,
-                    )
-                    append_symbol_integrity_row(
-                        engine=engine,
-                        symbol=symbol,
-                        pipeline="prices",
-                        retrieval_date=run_retrieval,
-                        status="failed",
-                        error_code=refetch.error_code,
-                        http_status=refetch.http_status,
-                        message=refetch.message,
-                    )
-                    continue
-                price_payload = _filter_price_payload_for_cutoff(refetch.payload, price_cutoff)
-                if (isinstance(price_payload, list) and not price_payload) or (
-                    isinstance(price_payload, dict) and not price_payload
-                ):
-                    price_no_new += 1
-                    append_symbol_integrity_row(
-                        engine=engine,
-                        symbol=symbol,
-                        pipeline="prices",
-                        retrieval_date=run_retrieval,
-                        status="success",
-                    )
-                    continue
-        save_price_payload(data_dir, symbol, price_payload)
-        write_prices(
-            engine=engine,
-            symbol=symbol,
-            provider=provider,
-            retrieval_date=run_retrieval,
-            raw_data=price_payload,
-        )
-        price_updates += 1
-        append_symbol_integrity_row(
-            engine=engine,
-            symbol=symbol,
-            pipeline="prices",
-            retrieval_date=run_retrieval,
-            status="success",
-        )
-    if price_total:
+    if not full_refresh_symbols:
+        logger.info("No symbols selected for full price history refresh")
+    else:
         logger.info(
-            "Price refresh summary: total=%d attempted=%d updated=%d no_new=%d failures=%d skipped=%d full_history=%d overlap_refetch=%d",
-            price_total,
-            price_attempted,
-            price_updates,
-            price_no_new,
-            price_failures,
-            price_skipped,
-            price_full_history,
-            price_overlap_refetch,
+            "Starting full price history refresh for %d symbols",
+            len(full_refresh_symbols),
+        )
+    refresh_summary, attempted_symbols = _run_full_price_refreshes(
+        engine=engine,
+        data_dir=data_dir,
+        run_retrieval=run_retrieval,
+        symbols=full_refresh_symbols,
+        price_cutoff=bulk_target,
+        provider=provider,
+        integrity_skips=integrity_skips,
+    )
+    bulk_price_inserts = 0
+    invalid_price_symbols: set[str] = set()
+    if exchange_codes:
+        logger.info("Starting bulk prices download for %d exchanges", len(exchange_codes))
+    for exchange_code in exchange_codes:
+        prices_result = _fetch_bulk_csv(exchange_code, bulk_target, None)
+        if prices_result.payload is None:
+            bulk_failures.append(f"prices:{exchange_code}")
+            logger.warning(
+                "Bulk prices download failed for %s: %s",
+                exchange_code,
+                prices_result.message,
+            )
+            continue
+        rows, invalid_map, invalid_unknown = parse_bulk_prices_csv(
+            prices_result.payload,
+            run_retrieval,
+            provider,
+        )
+        valid_rows = [
+            row
+            for row in rows
+            for row_date in [row.get("date")]
+            if isinstance(row_date, date) and row_date <= bulk_target
+        ]
+        _record_bulk_invalids("prices", invalid_map, invalid_unknown, invalid_price_symbols)
+        bulk_price_inserts += write_bulk_prices(engine, valid_rows)
+    remaining_capacity: int | None
+    if max_price_symbols == -1:
+        remaining_capacity = None
+    else:
+        remaining_capacity = max(max_price_symbols - refresh_summary["attempted"], 0)
+    extra_invalid = [symbol for symbol in invalid_price_symbols if symbol not in attempted_symbols]
+    if extra_invalid:
+        if remaining_capacity == 0:
+            logger.error(
+                "Skipped %d symbols with invalid bulk prices due to cap",
+                len(extra_invalid),
+            )
+        else:
+            logger.info(
+                "Refreshing %d symbols due to invalid bulk prices",
+                len(extra_invalid),
+            )
+            extra_latest: dict[str, date | None] = {symbol: None for symbol in extra_invalid}
+            selected_extra = (
+                extra_invalid
+                if remaining_capacity is None
+                else _apply_price_refresh_limit(extra_latest, remaining_capacity)
+            )
+            extra_summary, extra_attempted = _run_full_price_refreshes(
+                engine=engine,
+                data_dir=data_dir,
+                run_retrieval=run_retrieval,
+                symbols=selected_extra,
+                price_cutoff=bulk_target,
+                provider=provider,
+                integrity_skips=integrity_skips,
+            )
+            attempted_symbols.update(extra_attempted)
+            for key in refresh_summary:
+                refresh_summary[key] += extra_summary.get(key, 0)
+    if refresh_summary["total"]:
+        logger.info(
+            "Full price refresh summary: total=%d attempted=%d updated=%d failures=%d skipped=%d empty=%d",
+            refresh_summary["total"],
+            refresh_summary["attempted"],
+            refresh_summary["updated"],
+            refresh_summary["failures"],
+            refresh_summary["skipped"],
+            refresh_summary["empty"],
+        )
+    if bulk_dividend_inserts or bulk_split_inserts or bulk_price_inserts:
+        logger.info(
+            "Bulk inserts: dividends=%d splits=%d prices=%d",
+            bulk_dividend_inserts,
+            bulk_split_inserts,
+            bulk_price_inserts,
+        )
+    if bulk_failures:
+        logger.error("Bulk download failures: %s", ", ".join(bulk_failures))
+    if integrity_skips:
+        sample = ", ".join(integrity_skips[:25])
+        suffix = " (truncated)" if len(integrity_skips) > 25 else ""
+        logger.error(
+            "Symbol integrity skips (>=7 failed days): %d symbols: %s%s",
+            len(integrity_skips),
+            sample,
+            suffix,
         )
     tickers_to_process = _filter_stale_tickers(tickers, engine)
     if not tickers_to_process:
@@ -945,24 +1064,76 @@ def _coerce_int(value: object) -> int | None:
     return None
 
 
-def _select_price_refresh_candidates(
+def _bulk_target_date(run_retrieval: datetime) -> date:
+    """Return the effective 'yesterday' date based on the 10:00 UTC cutoff."""
+    retrieval = run_retrieval
+    if retrieval.tzinfo is None:
+        retrieval = retrieval.replace(tzinfo=UTC)
+    retrieval_utc = retrieval.astimezone(UTC)
+    cutoff = time(10, 0)
+    if retrieval_utc.time() >= cutoff:
+        return retrieval_utc.date() - timedelta(days=1)
+    return retrieval_utc.date() - timedelta(days=2)
+
+
+def _record_bulk_invalids(
+    label: str,
+    invalid_rows: dict[str, list[str]],
+    unknown_count: int,
+    invalid_symbols: set[str],
+) -> None:
+    """Log bulk parsing issues and collect invalid symbols."""
+    if unknown_count:
+        logger.warning("Skipped %d bulk %s rows with missing identifiers", unknown_count, label)
+    for symbol, fields in invalid_rows.items():
+        field_list = ", ".join(sorted(set(fields))) if fields else "unknown"
+        logger.warning("Invalid bulk %s row for %s (fields: %s)", label, symbol, field_list)
+        invalid_symbols.add(symbol)
+
+
+def _full_refresh_candidate_dates(
     engine: Engine,
-    max_symbols: int,
     cutoff_date: date,
-) -> list[dict[str, object]]:
-    """Select symbols for price refresh based on staleness and cap."""
-    symbols = get_price_refresh_symbols(engine)
-    if not symbols:
-        return []
-    latest_by_symbol = {
-        symbol: get_latest_price_date_before(engine, symbol, cutoff_date)
-        for symbol in symbols
+    stale_days: int,
+    trigger_symbols: set[str],
+) -> dict[str, date | None]:
+    """Build candidate latest-date map for full price refreshes."""
+    universe_rows = get_filtered_universe_price_status(engine, cutoff_date)
+    latest_by_symbol: dict[str, date | None] = {}
+    for row in universe_rows:
+        symbol = row.get("symbol")
+        if not isinstance(symbol, str):
+            continue
+        latest = row.get("latest_date")
+        latest_by_symbol[symbol] = latest if isinstance(latest, date) else None
+    stale_threshold = cutoff_date - timedelta(days=stale_days)
+    candidates = {
+        symbol
+        for symbol, latest in latest_by_symbol.items()
+        if latest is None or latest <= stale_threshold
     }
-    selected_symbols = _apply_price_refresh_limit(latest_by_symbol, max_symbols)
-    return [
-        {"symbol": symbol, "latest_date": latest_by_symbol.get(symbol)}
-        for symbol in selected_symbols
-    ]
+    candidates |= trigger_symbols
+    for symbol in candidates:
+        if symbol not in latest_by_symbol:
+            latest_by_symbol[symbol] = get_latest_price_date_before(engine, symbol, cutoff_date)
+    return {
+        symbol: (None if symbol in trigger_symbols else latest_by_symbol.get(symbol))
+        for symbol in candidates
+    }
+
+
+def _select_full_refresh_symbols(
+    engine: Engine,
+    cutoff_date: date,
+    stale_days: int,
+    max_symbols: int,
+    trigger_symbols: set[str],
+) -> list[str]:
+    """Select symbols for full history refresh based on triggers and staleness."""
+    candidates = _full_refresh_candidate_dates(engine, cutoff_date, stale_days, trigger_symbols)
+    if not candidates:
+        return []
+    return _apply_price_refresh_limit(candidates, max_symbols)
 
 
 def _apply_price_refresh_limit(
@@ -993,6 +1164,119 @@ def _apply_price_refresh_limit(
             selected.extend(random.sample(group, remaining))
             break
     return selected
+
+
+def _run_full_price_refreshes(
+    engine: Engine,
+    data_dir: Path,
+    run_retrieval: datetime,
+    symbols: list[str],
+    price_cutoff: date,
+    provider: str,
+    integrity_skips: list[str],
+) -> tuple[dict[str, int], set[str]]:
+    """Fetch and persist full price history for selected symbols."""
+    summary = {
+        "total": len(symbols),
+        "attempted": 0,
+        "updated": 0,
+        "failures": 0,
+        "skipped": 0,
+        "empty": 0,
+    }
+    attempted_symbols: set[str] = set()
+    if not symbols:
+        return summary, attempted_symbols
+    price_iterator = tqdm(
+        symbols,
+        total=len(symbols),
+        desc="Price history",
+        unit="symbol",
+        ascii=True,
+        disable=not sys.stderr.isatty(),
+    )
+    for symbol in price_iterator:
+        if not isinstance(symbol, str) or not symbol:
+            logger.warning("Skipping price history refresh for invalid symbol entry: %s", symbol)
+            continue
+        failure_days = get_symbol_failure_days(engine, symbol, pipeline="prices")
+        if failure_days >= 7:
+            summary["skipped"] += 1
+            integrity_skips.append(symbol)
+            logger.warning(
+                "Skipping price history refresh for %s after %d failed days",
+                symbol,
+                failure_days,
+            )
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="skipped",
+                error_code="max_failures",
+                message=f"Skipped after {failure_days} failed days",
+            )
+            continue
+        summary["attempted"] += 1
+        attempted_symbols.add(symbol)
+        result = _fetch_prices_result(symbol, None)
+        if result.payload is None:
+            summary["failures"] += 1
+            logger.warning(
+                "Skipping price persistence for %s due to fetch error: %s",
+                symbol,
+                result.message,
+            )
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="failed",
+                error_code=result.error_code,
+                http_status=result.http_status,
+                message=result.message,
+            )
+            continue
+        price_payload = _filter_price_payload_for_cutoff(result.payload, price_cutoff)
+        if (isinstance(price_payload, list) and not price_payload) or (
+            isinstance(price_payload, Mapping) and not price_payload
+        ):
+            summary["failures"] += 1
+            summary["empty"] += 1
+            logger.warning(
+                "Skipping price persistence for %s due to empty payload after cutoff",
+                symbol,
+            )
+            append_symbol_integrity_row(
+                engine=engine,
+                symbol=symbol,
+                pipeline="prices",
+                retrieval_date=run_retrieval,
+                status="failed",
+                error_code="empty_payload",
+                message="Empty payload after cutoff filter",
+            )
+            continue
+        save_price_payload(data_dir, symbol, price_payload)
+        inserted = write_prices(
+            engine=engine,
+            symbol=symbol,
+            provider=provider,
+            retrieval_date=run_retrieval,
+            raw_data=price_payload,
+        )
+        if inserted > 0:
+            summary["updated"] += 1
+        append_symbol_integrity_row(
+            engine=engine,
+            symbol=symbol,
+            pipeline="prices",
+            retrieval_date=run_retrieval,
+            status="success",
+        )
+    return summary, attempted_symbols
 
 
 def _coerce_price_value(value: object) -> float | None:
@@ -1062,14 +1346,14 @@ def _payload_adjusted_close_for_date(
 
 
 def _filter_price_payload_for_cutoff(payload: object, cutoff_date: date) -> object:
-    """Filter payload entries to dates strictly before the cutoff."""
+    """Filter payload entries to dates on or before the cutoff."""
     if isinstance(payload, list):
         return [
             entry
             for entry in payload
             if isinstance(entry, Mapping)
             for entry_date in [_coerce_payload_date(entry.get("date"))]
-            if entry_date is not None and entry_date < cutoff_date
+            if entry_date is not None and entry_date <= cutoff_date
         ]
     if isinstance(payload, Mapping):
         return {
@@ -1077,7 +1361,7 @@ def _filter_price_payload_for_cutoff(payload: object, cutoff_date: date) -> obje
             for key, entry in payload.items()
             if isinstance(entry, Mapping)
             for entry_date in [_coerce_payload_date(entry.get("date"))]
-            if entry_date is not None and entry_date < cutoff_date
+            if entry_date is not None and entry_date <= cutoff_date
         }
     return []
 
@@ -1139,22 +1423,6 @@ def _should_update(ticker: str, engine: Engine, cutoff: date) -> bool:
         return True
     logger.debug("Filing date for %s is current (%s); skipping update", ticker, latest_filing)
     return False
-
-
-def _price_start_date(engine: Engine | None, ticker: str, provider: str) -> date | None:
-    """Return the start date for price downloads.
-
-    Args:
-        engine (Engine | None): SQL engine when available.
-        ticker (str): Ticker symbol to query.
-        provider (str): Provider name (e.g., "EODHD").
-
-    Returns:
-        date | None: Latest stored price date, or None for full history.
-    """
-    if engine is None:
-        return None
-    return get_latest_price_date(engine, ticker, provider)
 
 
 def _months_ago(current: date, months: int) -> date:

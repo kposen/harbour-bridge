@@ -13,6 +13,7 @@ DEFAULT_ABS_TOL = 1e-6
 DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 30
 DEFAULT_UNIVERSE_REFRESH_DAYS = 30
 DEFAULT_MAX_SYMBOLS_FOR_PRICES = 10
+DEFAULT_PRICES_DAYS_STALE = 7
 
 _CONFIG_CACHE: dict[str, Any] | None = None
 
@@ -93,6 +94,21 @@ def get_max_symbols_for_prices() -> int:
     prices = config.get("prices", {}) if isinstance(config, dict) else {}
     value = _coerce_int(prices.get("max_symbols_for_prices"), DEFAULT_MAX_SYMBOLS_FOR_PRICES)
     return value if value >= -1 else DEFAULT_MAX_SYMBOLS_FOR_PRICES
+
+
+def get_prices_days_stale() -> int:
+    """Return the staleness threshold (in days) for full price refreshes.
+
+    Args:
+        None
+
+    Returns:
+        int: Days since last price update before triggering full refresh.
+    """
+    config = load_config()
+    prices = config.get("prices", {}) if isinstance(config, dict) else {}
+    value = _coerce_int(prices.get("days_stale"), DEFAULT_PRICES_DAYS_STALE)
+    return value if value >= 0 else DEFAULT_PRICES_DAYS_STALE
 
 
 def _coerce_float(value: object, default: float) -> float:

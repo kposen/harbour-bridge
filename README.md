@@ -53,6 +53,8 @@ shell.
 - `universe.refresh_days`: Optional. Share universe refresh cadence in days.
 - `prices.max_symbols_for_prices`: Optional. Max symbols to refresh prices per run
   (`-1` means unlimited).
+- `prices.days_stale`: Optional. Days since last price update before triggering
+  a full-history refresh (default 7).
 - Ticker format: `"TICKER.EXCHANGE"` (e.g., `AAPL.US`).
 - `config.toml`: Optional. Database float comparison tolerances for deduping.
 

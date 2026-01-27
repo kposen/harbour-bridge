@@ -346,25 +346,3 @@ def test_save_price_payload_writes_expected_file(tmp_path: Path) -> None:
     path = save_price_payload(tmp_path, "AAPL.US", payload)
     assert path.name == "AAPL.US.prices.json"
     assert path.exists()
-
-
-def test_price_start_date_uses_latest_date() -> None:
-    """Price start date should use the latest stored date.
-
-    Args:
-        None
-
-    Returns:
-        None: Assertions validate start-date selection.
-    """
-    engine = _get_engine()
-    symbol = _unique_symbol("AAPL")
-    write_prices(
-        engine=engine,
-        symbol=symbol,
-        provider="EODHD",
-        retrieval_date=datetime(2025, 2, 1, tzinfo=UTC),
-        raw_data=[_price_entry("2025-01-01")],
-    )
-    start_date = main._price_start_date(engine, symbol, "EODHD")
-    assert start_date == date(2025, 1, 1)
